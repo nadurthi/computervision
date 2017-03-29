@@ -5,4 +5,7 @@
 
 $$x=a^2+b^2 $$
 
+\begin{align}
+x=a+b
+\end{align}
 ## OK
