@@ -42,9 +42,9 @@ int main(){
 
 2. State and Measurement model equations are \alert{linear}.
 
-$$
-{x}_{k+1}&=F_k{x}_k+{\nu}_k\\
-{y}_{k+1}&=H_{k+1}{x}_{k+1}+{\omega}_{k+1}
-$$
+\begin{align}
+x_{k+1}&=F_k{x}_k+\nu_k\\
+y_{k+1}&=H_{k+1}{x}_{k+1}+\omega_{k+1}
+\end{align}
 
 
