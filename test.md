@@ -6,3 +6,12 @@
 $$x=a^2+b^2 $$
 
 ## OK
+
+```c++
+#include <iostream>
+
+int main(){
+
+}
+
+```
