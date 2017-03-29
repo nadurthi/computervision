@@ -9,3 +9,12 @@ $$x=a^2+b^2 $$
 x=a+b
 \end{align}
 ## OK
+
+```c++
+#include <iostream>
+
+int main(){
+
+}
+
+```
