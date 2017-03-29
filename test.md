@@ -239,71 +239,71 @@ p(\mbf{x}_{k+1}|Y_k)&=\frac{1}{\sqrt{|2\pi A^{-1}|}} \: . \: \exp \Big[-\frac{1}
 $$
 
 $$
-\begin{align*}
+\begin{align}
 p(\mbf{x}_{k+1}|Y_{k+1})&=\frac{1}{\sqrt{|2\pi A^{-1}|}} \: . \: \exp \Big[-\frac{1}{2}\big(\mbf{x}_{k+1}-A^{-1}b\big)^TA\big(\mbf{x}_{k+1}-A^{-1}b\big) \Big]
-\end{align*}
+\end{align}
 $$
 
 $$
-\begin{align*}
+\begin{align}
 b^T&=\big(\mbf{y}_{k+1}^TR_{k+1}^{-1}H_{k+1} +\mbf{\hat{x}}_{k+1|k}^T P_{k+1|k}^{-1}\big)\\
 A&= P_{k+1|k}^{-1}+H_{k+1}^T R_{k+1}^{-1}H_{k+1}\\
 A^{-1}&=P_{k+1|k}-\underbrace{P_{k+1|k}H_{k+1}^T\big(R_{k+1} +H_{k+1} P_{k+1|k} H_{k+1}^T \big)^{-1}}_{K_{k+1}} H_{k+1}P_{k+1|k}\\
 &=P_{k+1|k}-K_{k+1}H_{k+1}P_{k+1|k}\\
 A^{-1}b&=\big( P_{k+1|k}-K_{k+1}H_{k+1}P_{k+1|k} \big)\big(H_{k+1}^TR_{k+1}^{-1}\mbf{y}_{k+1} +P_{k+1|k}^{-1}\mbf{\hat{x}}_{k+1|k}\big)\\
 &=\mbf{\hat{x}}_{k+1|k}+K_{k+1}\big(\mbf{y}_{k+1}-H_{k+1}\mbf{\hat{x}}_{k+1|k} \big)
-\end{align*}
+\end{align}
 $$
 Hence the posterior pdf still remains Gaussian even after Bayes' Rule update, with mean and covariance as
 $$
-\begin{align*}
+\begin{align}
 \mbf{\hat{x}}_{k+1|k+1}&=A^{-1}b=\mbf{\hat{x}}_{k+1|k}+K_{k+1}\big(\mbf{y}_{k+1}-H_{k+1}\mbf{\hat{x}}_{k+1|k} \big)\\
 P_{k+1|k+1}&=A^{-1}=P_{k+1|k}-K_{k+1}H_{k+1}P_{k+1|k}
-\end{align*}
+\end{align}
 $$
 
 $$
-\begin{align*}
+\begin{align}
 p(\mbf{x}_{k+1}|Y_k)&=\NN{\mbf{x}_{k+1}}{\mbf{\hat{x}}_{k+1|k}\:\:}{P_{k+1|k}}\\
 \mbf{\hat{x}}_{k+1|k}&=F_k\mbf{\hat{x}}_{k|k}\\
 P_{k+1|k}&=F_kP_{k|k}F^T+Q_k
-\end{align*}
+\end{align}
 $$
 
 $$
-\begin{align*}
+\begin{align}
 p(\mbf{x}_{k+1}|Y_{k+1})&=\NN{\mbf{x}_{k+1}}{\mbf{\hat{x}}_{k+1|k+1}\:\:}{P_{k+1|k+1}}\\
 \mbf{\hat{x}}_{k+1|k+1}&=\mbf{\hat{x}}_{k+1|k}+K_{k+1}\big(\mbf{y}_{k+1}-H_{k+1}\mbf{\hat{x}}_{k+1|k} \big)\\
 P_{k+1|k+1}&=P_{k+1|k}-K_{k+1}H_{k+1}P_{k+1|k}\\
 K_{k+1}&=P_{k+1|k}H_{k+1}^T\big(R_{k+1} +H_{k+1} P_{k+1|k} H_{k+1}^T \big)^{-1}
-\end{align*}
+\end{align}
 $$
 
 <h2>Minimum Variance Estimate</h2>
 Starting from the prior pdf $p(\mbf{x}_{k+1}|Y_{k+1})=\NN{\mbf{x}_{k+1}}{\mbf{\hat{x}}_{k+1|k+1}\:\:}{P_{k+1|k+1}}$ at time $k+1$
 
 $$
-\begin{align*}
+\begin{align}
 \min\limits_{\hhxkngkn} \: Tr\Big\{E[(\xkn-\hhxkngkn)(\xkn-\hhxkngkn)^T]\Big\}
-\end{align*}
+\end{align}
 $$
 
 i.e. find an estimate that minimizes the posterior variance
 
 $$
-\begin{align*}
+\begin{align}
 \hhxkngkn =\hhxkngk+\mbf{K}_{k+1}(\ykn-\hhykn)
-\end{align*}
+\end{align}
 $$
 
 The assumed estimator is unbiased:
 
 $$
-\begin{align*}
+\begin{align}
 E[\hhxkngkn]&=E[\hhxkngk+\mbf{K}_{k+1}(\ykn-\hhykn)]=E[\hhxkngk]+\mbf{K}_{k+1}(E[\ykn]-E[\hhykn])\\
 &=F_kE[\mbf{\hat{x}}_{k|k}]+\mbf{K}_{k+1}(H_{k+1}E[\mbf{x}_{k+1}]-H_{k+1}E[\hhxkngk])\\
 &=E[\mbf{x}_{k+1}]+\mbf{K}_{k+1}(H_{k+1}F\mbf{\hat{x}}_{k|k}-H_{k+1}F\mbf{\hat{x}}_{k|k})=E[\mbf{x}_{k+1}]
-\end{align*}
+\end{align}
 $$
 
 <h2>Variance approach for Kalman Filter</h2>
@@ -350,17 +350,17 @@ $$
 The Kalman Filter gain is then given as:
 
 $$
-\begin{align*}
+\begin{align}
 \mbf{K}_{k+1}&=\mbf{P}^{xy}_{k+1}(\mbf{P}^{y}_{k+1/k})^{-1}=P_{k+1|k}H_{k+1}^T\big( H_{k+1}P_{k+1|k}H_{k+1}^T+R_{k+1}\big)^{-1}
-\end{align*}
+\end{align}
 $$
 
 <h2>Optimization approach - Recursive Least Squares</h2>
 
 $$
-\begin{align*}
+\begin{align}
 J=\frac{1}{2}(\mbf{x}_0-\hat{\mbf{x}}_0)^TP_0^{-1}(\mbf{x}_0-\hat{\mbf{x}}_0)+\frac{1}{2}\sum_{k=1}^{T}(\mbf{y}_k-H_k\mbf{x}_k)^TR_k^{-1}(\mbf{y}_k-H_k\mbf{x}_k)
-\end{align*}
+\end{align}
 $$
 
 subject to:
