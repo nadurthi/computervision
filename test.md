@@ -4,10 +4,12 @@
 # Computer vision basics
 
 $$x=a^2+b^2 $$
+
 $$
-\begin{align}
-x=a+b
-\end{align}
+\begin{bmatrix}
+1 & 2\\
+3 & 4
+\end{bmatrix}
 $$
 ## OK
 
