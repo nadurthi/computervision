@@ -1,6 +1,10 @@
 
 <script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+
+
+
 <div style="display: none;">
+
 $$
 \(
 \newcommand{\mbf}[1]{\mathbf{#1}}
@@ -47,6 +51,13 @@ $$
 $$
 </div>
 
+# TEST
+
+<article class="markdown-body">
+	<h1>Unicorns</h1>
+	<p>All the things</p>
+</article>
+
 # Computer vision basics
 
 $$x=a^2+b^2 $$
@@ -75,10 +86,13 @@ int main(){
 
 }
 ```
-
+```python
+def func1():
+	a=a+a
+```
 # Kalman Filter
 
-1. Initial conditions, Process noise and Measurement noise are \alert{Gaussian} distributed and mutually independent processes.
+1. Initial conditions, Process noise and Measurement noise are <font color="red"> Gaussian</font> distributed and mutually independent processes.
 
 2. State and Measurement model equations are \alert{linear}.
 
@@ -92,18 +106,17 @@ $$
 
 $$
 \begin{align}
-\mbf{x}_0 \sim \NN{\mbf{x}_0}{\mbf{\hat{x}}_0}{P_0}
-\mbf{\nu}_k \sim \NN{\mbf{\nu}_k}{\mbf{0}}{Q_k}
-\mbf{\omega}_{k+1} \sim \NN{\mbf{\omega}_{k+1}}{0}{R_{k+1}}
+\mbf{x}_0 &\sim \NN{\mbf{x}_0}{\mbf{\hat{x}}_0}{P_0}\\
+\mbf{\nu}_k &\sim \NN{\mbf{\nu}_k}{\mbf{0}}{Q_k}\\
+\mbf{\omega}_{k+1} &\sim \NN{\mbf{\omega}_{k+1}}{0}{R_{k+1}}
 \end{align}
 $$
 
 
 $$
-\begin{align*}
+\begin{align}
 p(\mbf{x}_k|Y_k)=\NN{\mbf{x}_k}{\mbf{\hat{x}}_{k|k}}{P_{k|k}}
-\end{align*}
-
+\end{align}
 $$
 
 where \(Y_k\) is set of measurement upto time \(k\),
@@ -157,12 +170,13 @@ $$
 
 
 Starting with the prior pdf at time step \(k+1\),
-
 $$
 \begin{align*}
 p(\mbf{x}_{k+1}|Y_k)=\NN{\mbf{x}_{k+1}}{\mbf{\hat{x}}_{k+1|k}\:\:}{P_{k+1|k}}
 \end{align*}
+$$
 the posterior pdf from Bayes' rule at the same time step is given by
+$$
 \begin{align*}
 p(\mbf{x}_{k+1}|Y_{k+1})=\frac{p(\mbf{y}_{k+1}|\mbf{x}_{k+1})p(\mbf{x}_{k+1}|Y_k)}{\int p(\mbf{y}_{k+1}|\mbf{x}_{k+1})p(\mbf{x}_{k+1}|Y_k)\:d\mbf{x}_{k+1}}
 \end{align*}
@@ -215,7 +229,9 @@ $$
 &\hspace{3cm}\: .\: \int \exp\Big[ -\frac{1}{2} \mbf{x}_{k+1}^TA\mbf{x}_{k+1} +b^T\mbf{x}_{k+1}\Big]\:d\mbf{x}_{k+1}\\
 &=\frac{\sqrt{|2\pi A^{-1}|}}{\sqrt{ |2\pi R_{k+1}||2\pi P_{k+1|k}|}}\: .\: \exp\Big[ -\frac{1}{2} \mbf{y}_{k+1}^TR_{k+1}^{-1}\mbf{y}_{k+1}-\frac{1}{2} \mbf{\hat{x}}_{k+1|k}^T P_{k+1|k}^{-1} \mbf{\hat{x}}_{k+1|k} +\frac{1}{2}b^TA^{-T}b \Big]
 \end{align*}
+$$
 The posterior pdf from Bayes' rule is given as:
+$$
 \begin{align*}
 p(\mbf{x}_{k+1}|Y_k)&=\frac{1}{\sqrt{|2\pi A^{-1}|}} \: . \: \exp \Big[-\frac{1}{2}\mbf{x}_{k+1}^TA\mbf{x}_{k+1} + b^T\mbf{x}_{k+1} -\frac{1}{2}b^TA^{-T}b \Big]\\
 &=\frac{1}{\sqrt{|2\pi A^{-1}|}} \: . \: \exp \Big[-\frac{1}{2}\big(\mbf{x}_{k+1}-A^{-1}b\big)^TA\big(\mbf{x}_{k+1}-A^{-1}b\big) \Big]\\
@@ -237,7 +253,9 @@ A^{-1}&=P_{k+1|k}-\underbrace{P_{k+1|k}H_{k+1}^T\big(R_{k+1} +H_{k+1} P_{k+1|k} 
 A^{-1}b&=\big( P_{k+1|k}-K_{k+1}H_{k+1}P_{k+1|k} \big)\big(H_{k+1}^TR_{k+1}^{-1}\mbf{y}_{k+1} +P_{k+1|k}^{-1}\mbf{\hat{x}}_{k+1|k}\big)\\
 &=\mbf{\hat{x}}_{k+1|k}+K_{k+1}\big(\mbf{y}_{k+1}-H_{k+1}\mbf{\hat{x}}_{k+1|k} \big)
 \end{align*}
+$$
 Hence the posterior pdf still remains Gaussian even after Bayes' Rule update, with mean and covariance as
+$$
 \begin{align*}
 \mbf{\hat{x}}_{k+1|k+1}&=A^{-1}b=\mbf{\hat{x}}_{k+1|k}+K_{k+1}\big(\mbf{y}_{k+1}-H_{k+1}\mbf{\hat{x}}_{k+1|k} \big)\\
 P_{k+1|k+1}&=A^{-1}=P_{k+1|k}-K_{k+1}H_{k+1}P_{k+1|k}
@@ -354,4 +372,5 @@ $$
 $$
 
 minimize w.r.t. $[\mbf{x}_0,\mbf{x}_1,\cdots,\mbf{x}_T]$
+
 
