@@ -1,5 +1,49 @@
 
 <script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
+<div style="display: none;">
+\(
+\newcommand{\mbf}[1]{\mathbf{#1}}
+\newcommand{\NN}[3]{{\bf \mathcal{N}}(#1:#2,#3)}
+\newcommand{\re}{\mathbb R}
+\newcommand{\II}{{\bf \mathbb I}}
+\newcommand{\bx}{{\bf x}}
+\newcommand{\bmx}{{\bf \hat{x}}}
+\newcommand{\bmxt}[2]{{\bf \hat{x}}_{#1}^{#2}}
+\newcommand{\sigptset}{{\bf \mathbb (X;w)}}
+\newcommand{\sigptsetele}{\mathbb (X^i;w^i)}
+\newcommand{\xk}{\mathbf{x}_{k}}
+\newcommand{\hhxk}{\mathbf{\hat{x}}_{k}}
+\newcommand{\hhxkngk}{\mathbf{\hat{x}}_{k+1/k}}
+\newcommand{\hhxkgk}{\mathbf{\hat{x}}_{k/k}}
+\newcommand{\hhxkngkn}{\mathbf{\hat{x}}_{k+1/k+1}}
+\newcommand{\hhxkn}{\mathbf{h}(\mathbf{x}_{k+1})}
+\newcommand{\xkn}{\mathbf{x}_{k+1}}
+\newcommand{\fxk}{\mathbf{f}(\mathbf{x}_{k})}
+\newcommand{\hxkn}{\mathbf{h}(\mathbf{x}_{k+1})}
+\newcommand{\ykn}{\mathbf{y}_{k+1}}
+\newcommand{\hhykn}{\mathbf{\hat{y}}_{k+1}}
+\newcommand{\Yk}{\mathbf{Y}_{k}}
+\newcommand{\Ykn}{\mathbf{Y}_{k+1}}
+\newcommand{\pderiv}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\eps}{\boldsymbol{\epsilon}}
+\newcommand{\Nu}{\boldsymbol{\nu}}
+\newcommand{\Ps}{\boldsymbol{\Psi}}
+\newcommand{\xii}{\boldsymbol{\xi}}
+\newcommand{\Al}{\boldsymbol{\alpha}}
+\newcommand{\x}{\mathbf{x}}
+\newcommand{\C}{\mathbf{C}}
+\newcommand{\uu}{\mathbf{u}}
+\newcommand{\z}{\mathbf{z}}
+\newcommand{\q}{\mathbf{q}}
+\newcommand{\A}{\mathbf{A}}
+\newcommand{\B}{\mathbf{B}}
+\newcommand{\f}{\mathbf{f}}
+\newcommand{\hc}{\mathbf{H}}
+\newcommand{\R}{\mathbf{R}}
+\newcommand{\y}{\mathbf{y}}
+\newcommand{\Y}{\mathbf{Y}}
+\)
+</div>
 
 # Computer vision basics
 
@@ -36,10 +80,10 @@ int main(){
 
 2. State and Measurement model equations are \alert{linear}.
 
-\begin{align*}
-\mbf{x}_{k+1}&amp;=F_k\mbf{x}_k+\mbf{\nu}_k\\
-\mbf{y}_{k+1}&amp;=H_{k+1}\mbf{x}_{k+1}+\mbf{\omega}_{k+1}
-\end{align*}
+\begin{align}
+\mbf{x}_{k+1}&=F_k\mbf{x}_k+\mbf{\nu}_k\\
+\mbf{y}_{k+1}&=H_{k+1}\mbf{x}_{k+1}+\mbf{\omega}_{k+1}
+\end{align}
 
 \begin{align}
 \mbf{x}_0 \sim \NN{\mbf{x}_0}{\mbf{\hat{x}}_0}{P_0}
