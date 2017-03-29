@@ -81,8 +81,8 @@ int main(){
 2. State and Measurement model equations are \alert{linear}.
 
 \begin{align}
-\mbf{x}_{k+1}&=F_k\mbf{x}_k+\mbf{\nu}_k\\
-\mbf{y}_{k+1}&=H_{k+1}\mbf{x}_{k+1}+\mbf{\omega}_{k+1}
+{x}_{k+1}&=F_k{x}_k+\mbf{\nu}_k\\
+{y}_{k+1}&=H_{k+1}{x}_{k+1}+{\omega}_{k+1}
 \end{align}
 
 \begin{align}
