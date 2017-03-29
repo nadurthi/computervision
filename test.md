@@ -170,12 +170,15 @@ $$
 
 
 Starting with the prior pdf at time step \(k+1\),
+
 $$
 \begin{align*}
 p(\mbf{x}_{k+1}|Y_k)=\NN{\mbf{x}_{k+1}}{\mbf{\hat{x}}_{k+1|k}\:\:}{P_{k+1|k}}
 \end{align*}
 $$
+
 the posterior pdf from Bayes' rule at the same time step is given by
+
 $$
 \begin{align*}
 p(\mbf{x}_{k+1}|Y_{k+1})=\frac{p(\mbf{y}_{k+1}|\mbf{x}_{k+1})p(\mbf{x}_{k+1}|Y_k)}{\int p(\mbf{y}_{k+1}|\mbf{x}_{k+1})p(\mbf{x}_{k+1}|Y_k)\:d\mbf{x}_{k+1}}
