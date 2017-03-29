@@ -43,7 +43,8 @@ int main(){
 2. State and Measurement model equations are \alert{linear}.
 
 \begin{align}
-x_{k+1}&=F_k{x}_k+\nu_k
+x_{k+1}&=F_k{x}_k+\nu_k\\
+a=b
 \end{align}
 
 
