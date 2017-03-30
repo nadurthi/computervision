@@ -5,7 +5,6 @@
 
 <div style="display: none;">
 
-$$
 \(
 \newcommand{\mbf}[1]{\mathbf{#1}}
 \newcommand{\NN}[3]{{\bf \mathcal{N}}(#1:#2,#3)}
@@ -48,7 +47,7 @@ $$
 \newcommand{\y}{\mathbf{y}}
 \newcommand{\Y}{\mathbf{Y}}
 \)
-$$
+
 </div>
 
 
@@ -118,9 +117,9 @@ where $$Y_k$$ is set of measurement upto time $$k$$,
 
 
 $$
-\begin{align*}
+\begin{align}
 p(\mbf{x}_{k+1}|Y_k)=\int p(\mbf{x}_{k+1}|\mbf{x}_{k})\: . \:p(\mbf{x}_{k}|Y_k)\:d\mbf{x}_{k}
-\end{align*}
+\end{align}
 $$
 
 The state transition probability density $p(\mbf{x}_{k+1}|\mbf{x}_{k})$ is given as
