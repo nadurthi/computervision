@@ -100,7 +100,8 @@ $$
 
 $$
 \begin{align}
-\mbf{x}_0 =\NN{x}{y_0}{P_0}
+\mbf{x}_0 &=\NN{x}{y_0}{P_0}\\
+y&={\bf \mathcal{N}}(x:y,z)
 \end{align}
 $$
 
