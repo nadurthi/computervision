@@ -100,9 +100,7 @@ $$
 
 $$
 \begin{align}
-\mbf{x}_0 &\sim \NN{\mbf{x}_0}{\mbf{\hat{x}}_0}{P_0}\\
-\mbf{\nu}_k &\sim \NN{\mbf{\nu}_k}{\mbf{0}}{Q_k}\\
-\mbf{\omega}_{k+1} &\sim \NN{\mbf{\omega}_{k+1}}{0}{R_{k+1}}
+\mbf{x}_0 &\sim \NN{\mbf{x}_0}{\mbf{\hat{x}}_0}{P_0}
 \end{align}
 $$
 
