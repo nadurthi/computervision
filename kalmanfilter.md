@@ -100,7 +100,7 @@ $$
 
 $$
 \begin{align}
-\mbf{x}_0 =\NN{\mbf{x}_0}{\mbf{\hat{x}}_0}{P_0}
+\mbf{x}_0 =\NN{x}{y_0}{P_0}
 \end{align}
 $$
 
