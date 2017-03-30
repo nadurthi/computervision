@@ -121,7 +121,7 @@ p(\mbf{x}_{k+1}|Y_k)=\int p(\mbf{x}_{k+1}|\mbf{x}_{k})\: . \:p(\mbf{x}_{k}|Y_k)\
 \end{align}
 $$
 
-The state transition probability density $p(\mbf{x}_{k+1}|\mbf{x}_{k})$ is given as
+The state transition probability density $$p(\mbf{x}_{k+1}|\mbf{x}_{k})$$ is given as
 
 $$
 \begin{align*}
