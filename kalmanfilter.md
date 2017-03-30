@@ -114,7 +114,7 @@ p(\mbf{x}_k|Y_k)=\NN{\mbf{x}_k}{\mbf{\hat{x}}_{k|k}}{P_{k|k}}
 \end{align}
 $$
 
-where $Y_k$ is set of measurement upto time $k$,
+where $$Y_k$$ is set of measurement upto time $$k$$,
 
 
 $$
