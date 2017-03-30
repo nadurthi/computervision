@@ -4,7 +4,7 @@
 
 
 <div style="display: none;">
-
+$$
 \(
 \newcommand{\mbf}[1]{\mathbf{#1}}
 \newcommand{\NN}[3]{{\bf \mathcal{N}}(#1:#2,#3)}
@@ -47,7 +47,7 @@
 \newcommand{\y}{\mathbf{y}}
 \newcommand{\Y}{\mathbf{Y}}
 \)
-
+$$
 </div>
 
 
