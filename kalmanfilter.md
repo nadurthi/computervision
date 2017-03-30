@@ -1,4 +1,4 @@
-<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-markdown/2.10.0/js/bootstrap-markdown.js" type="text/javascript"> </script>
+
 <script src="https://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML" type="text/javascript"></script>
 
 
@@ -83,7 +83,7 @@ int main(){
 ```
 ```python
 def func1():
-	a=a+a
+    a=a+a
 ```
 # Kalman Filter
 
@@ -114,7 +114,7 @@ p(\mbf{x}_k|Y_k)=\NN{\mbf{x}_k}{\mbf{\hat{x}}_{k|k}}{P_{k|k}}
 \end{align}
 $$
 
-where \(Y_k\) is set of measurement upto time \(k\),
+where $Y_k$ is set of measurement upto time $k$,
 
 
 $$
@@ -123,7 +123,7 @@ p(\mbf{x}_{k+1}|Y_k)=\int p(\mbf{x}_{k+1}|\mbf{x}_{k})\: . \:p(\mbf{x}_{k}|Y_k)\
 \end{align*}
 $$
 
-The state transition probability density \(p(\mbf{x}_{k+1}|\mbf{x}_{k})\) is given as
+The state transition probability density $p(\mbf{x}_{k+1}|\mbf{x}_{k})$ is given as
 
 $$
 \begin{align*}
@@ -143,7 +143,7 @@ p(\mbf{x}_{k+1}|Y_k)&=\frac{1}{\sqrt{(2\pi)^n |P_{k+1|k}|}} \: .\: \exp\Big[-\fr
 \end{align*}
 $$
 
-The prior pdf \(p(\mbf{x}_{k+1}|Y_k)\) has mean \(\mbf{\hat{x}}_{k+1|k}\) and covariance \(P_{k+1|k}\) given as
+The prior pdf $p(\mbf{x}_{k+1}|Y_k)$ has mean $\mbf{\hat{x}}_{k+1|k}$ and covariance $P_{k+1|k}$ given as
 
 $$
 \begin{align*}
@@ -164,7 +164,7 @@ P_{k+1|k}&=E\big[ \big(\mbf{x}_{k+1}-F_k\mbf{\hat{x}}_{k|k} \big) \big(\mbf{x}_{
 $$
 
 
-Starting with the prior pdf at time step \(k+1\),
+Starting with the prior pdf at time step $k+1$,
 $$
 \begin{align*}
 p(\mbf{x}_{k+1}|Y_k)=\NN{\mbf{x}_{k+1}}{\mbf{\hat{x}}_{k+1|k}\:\:}{P_{k+1|k}}
@@ -178,7 +178,7 @@ p(\mbf{x}_{k+1}|Y_{k+1})=\frac{p(\mbf{y}_{k+1}|\mbf{x}_{k+1})p(\mbf{x}_{k+1}|Y_k
 $$
 
 
-where the measurement likelihood pdf \(p(\mbf{y}_{k+1}|\mbf{x}_{k+1})\) can be derived from the measurement model equations as:
+where the measurement likelihood pdf $p(\mbf{y}_{k+1}|\mbf{x}_{k+1})\) can be derived from the measurement model equations as:
 
 $$
 \begin{align*}
