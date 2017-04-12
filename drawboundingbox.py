@@ -47,6 +47,7 @@ class Imagefiles(object):
         self.files=os.listdir(self.folder)
         self.files=[ff for ff in self.files if os.path.isfile(ff) and ('.jpg' in ff  or '.jpeg' in ff or '.png' in ff) ]
         
+        original_N=len(self.files)
 
         if os.path.isfile(self.savefile)==False:
             with open(self.savefile,'w') as savefile:
@@ -63,7 +64,7 @@ class Imagefiles(object):
 
         self.N=len(self.files)
         self.n=self.N
-        print self.files
+        print len(self.files),original_N
 
     def __iter__(self):
         return self
