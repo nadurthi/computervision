@@ -1,3 +1,4 @@
+from __future__ import division 
 import cv2
 import os
 import json
@@ -7,7 +8,7 @@ class DrawBoundingBox(object):
         self.img=img
         self.drawing=False
         self.box=[]
-
+        self.cnt=0
     def getboundingbox(self):
         return self.box
 
@@ -19,11 +20,17 @@ class DrawBoundingBox(object):
     def __call__(self,event,x,y,flags,param):
         if event == cv2.EVENT_LBUTTONDOWN:
             self.drawing=True
+            self.cnt=0
             self.box.append( [(x,y),()] )
             print self.box
         elif event == cv2.EVENT_MOUSEMOVE:
+            
             if self.drawing == True:
-                cv2.rectangle(self.img,self.box[-1][0],(x,y),(0,255,0),1)
+                self.cnt=self.cnt+1
+                if self.cnt%10==0:
+                    print 'plotting'
+                    cv2.rectangle(self.img,self.box[-1][0],(x,y),(0,255,0),1)
+ 
 
         elif event == cv2.EVENT_LBUTTONUP:
             self.drawing = False
@@ -33,19 +40,30 @@ class DrawBoundingBox(object):
 
 class Imagefiles(object):
 
-    def __init__(self,folder='.',savefile='boundingbox.json'):
+    def __init__(self,folder='.',savefile='boundingbox.json',skipdone=False):
         self.folder=folder
         self.savefile=savefile
         self.data={}
         self.files=os.listdir(self.folder)
         self.files=[ff for ff in self.files if os.path.isfile(ff) and ('.jpg' in ff  or '.jpeg' in ff or '.png' in ff) ]
-        self.N=len(self.files)
-        self.n=self.N
-        print self.files
+        
 
         if os.path.isfile(self.savefile)==False:
             with open(self.savefile,'w') as savefile:
                 json.dump({},savefile)
+        else:
+            with open(self.savefile,'r') as savefile:
+                data=json.load(savefile)
+
+        if skipdone:
+            donefiles=data.keys()
+            for dd in donefiles:
+                if dd in self.files:
+                    self.files.remove(dd)
+
+        self.N=len(self.files)
+        self.n=self.N
+        print self.files
 
     def __iter__(self):
         return self
@@ -95,7 +113,7 @@ class Imagefiles(object):
                         json.dump(data,savefile)
 
 
-                if k == 27:
+                if k == 27 or k==113:
                     break
 
             cv2.destroyAllWindows()
@@ -103,11 +121,11 @@ class Imagefiles(object):
 
 if __name__=='__main__':
     print "ok"
-    F=Imagefiles(savefile='boundingbox.json')
+    F=Imagefiles(savefile='boundingbox.json',skipdone=True)
 
 
     for f in F:
-        print "working on f"
+        print "----------------------"
 
 
 
