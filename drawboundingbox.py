@@ -56,15 +56,15 @@ class Imagefiles(object):
             with open(self.savefile,'r') as savefile:
                 data=json.load(savefile)
 
-        if skipdone:
-            donefiles=data.keys()
-            for dd in donefiles:
-                if dd in self.files:
-                    self.files.remove(dd)
+            if skipdone:
+                donefiles=data.keys()
+                for dd in donefiles:
+                    if dd in self.files:
+                        self.files.remove(dd)
 
         self.N=len(self.files)
         self.n=self.N
-        print len(self.files),original_N
+        print "to do = ",len(self.files)," original = ",original_N
 
     def __iter__(self):
         return self
