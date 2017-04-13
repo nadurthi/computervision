@@ -2,6 +2,7 @@ from __future__ import division
 import cv2
 import os
 import json
+import pdb
 
 class DrawBoundingBox(object):
     def __init__(self,img):
@@ -38,6 +39,10 @@ class DrawBoundingBox(object):
             print self.box
             cv2.rectangle(self.img,self.box[-1][0],self.box[-1][1],(0,255,0),1)
 
+
+
+
+
 class Imagefiles(object):
 
     def __init__(self,folder='.',savefile='boundingbox.json',skipdone=False):
@@ -66,6 +71,33 @@ class Imagefiles(object):
         self.n=self.N
         print "to do = ",len(self.files)," original = ",original_N
 
+    def getcroppedimages(self):
+        with open(self.savefile,'r') as savefile:
+            data=json.load(savefile)
+        if os.path.isdir('cropped')==False:
+            os.mkdir('cropped')
+
+        for image in self.files:
+            # pdb.set_trace()
+            # print image in data.keys()
+            if image in data:
+                ss=data[image]   
+                if len(ss)==0:
+                    continue
+                img = cv2.imread(image,1)
+                for i in range(len(ss)):
+                    sa=ss[i]
+                    if len(sa[0])==0 or len(sa[1])==0:
+                        continue
+                    print sa 
+                    x=sorted([sa[0][0],sa[1][0]])
+                    y=sorted([sa[0][1],sa[1][1]])
+
+                    img2=img[ y[0]:y[1], x[0]:x[1] ]
+                    # cv2.namedWindow('image_'+str(i) )
+                    # cv2.imshow('image_'+str(i) ,img2)
+                    cv2.imwrite('cropped/cropped_'+str(i)+'_'+image,img2)
+
     def __iter__(self):
         return self
     
@@ -75,8 +107,8 @@ class Imagefiles(object):
         else:
             self.n=self.n-1
             print "working on image = ",self.files[self.n]
-
-            img = cv2.imread(self.files[self.n],1)
+            image=self.files[self.n]
+            img = cv2.imread(image,1)
             # cv2.rectangle(img,(12,26),(136,121),(0,255,0),2)
             cv2.namedWindow('image')
             draw_rect=DrawBoundingBox(img)
@@ -122,11 +154,17 @@ class Imagefiles(object):
 
 if __name__=='__main__':
     print "ok"
-    F=Imagefiles(savefile='boundingbox.json',skipdone=True)
+    jsonfiles=[jsonfiles for jsonfiles in os.listdir('.') if '.json' in jsonfiles and 'boundingbox' in jsonfiles]
+    if len(jsonfiles)==0:
+        F=Imagefiles(savefile='boundingbox.json',skipdone=False)
+    else:
+        print jsonfiles[0]
+        F=Imagefiles(savefile=jsonfiles[0],skipdone=False)
+    F.getcroppedimages()
 
-
-    for f in F:
-        print "----------------------"
+    # F=Imagefiles(savefile='boundingbox_YFT.json',skipdone=True)
+    # for f in F:
+    #     print "----------------------"
 
 
 
