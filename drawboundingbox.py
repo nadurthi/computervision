@@ -1,4 +1,4 @@
-from __future__ import division 
+from __future__ import division
 import cv2
 import os
 import json
@@ -25,13 +25,13 @@ class DrawBoundingBox(object):
             self.box.append( [(x,y),()] )
             print self.box
         elif event == cv2.EVENT_MOUSEMOVE:
-            
+
             if self.drawing == True:
                 self.cnt=self.cnt+1
                 if self.cnt%10==0:
                     print 'plotting'
                     cv2.rectangle(self.img,self.box[-1][0],(x,y),(0,255,0),1)
- 
+
 
         elif event == cv2.EVENT_LBUTTONUP:
             self.drawing = False
@@ -51,7 +51,7 @@ class Imagefiles(object):
         self.data={}
         self.files=os.listdir(self.folder)
         self.files=[ff for ff in self.files if os.path.isfile(ff) and ('.jpg' in ff  or '.jpeg' in ff or '.png' in ff) ]
-        
+
         original_N=len(self.files)
 
         if os.path.isfile(self.savefile)==False:
@@ -71,17 +71,24 @@ class Imagefiles(object):
         self.n=self.N
         print "to do = ",len(self.files)," original = ",original_N
 
-    def getcroppedimages(self):
+    def getcroppedimages(self,image=None):
         with open(self.savefile,'r') as savefile:
             data=json.load(savefile)
         if os.path.isdir('cropped')==False:
             os.mkdir('cropped')
 
-        for image in self.files:
+
+        if image is None:
+            files=self.files
+        else:
+            files=[image]
+            print "save copped image = ", image
+
+        for image in files:
             # pdb.set_trace()
             # print image in data.keys()
             if image in data:
-                ss=data[image]   
+                ss=data[image]
                 if len(ss)==0:
                     continue
                 img = cv2.imread(image,1)
@@ -89,18 +96,19 @@ class Imagefiles(object):
                     sa=ss[i]
                     if len(sa[0])==0 or len(sa[1])==0:
                         continue
-                    print sa 
+                    print sa
                     x=sorted([sa[0][0],sa[1][0]])
                     y=sorted([sa[0][1],sa[1][1]])
 
                     img2=img[ y[0]:y[1], x[0]:x[1] ]
                     # cv2.namedWindow('image_'+str(i) )
                     # cv2.imshow('image_'+str(i) ,img2)
+                    print "copped image = ", 'cropped/cropped_'+str(i)+'_'+image
                     cv2.imwrite('cropped/cropped_'+str(i)+'_'+image,img2)
 
     def __iter__(self):
         return self
-    
+
     def next(self):
         if self.n==0:
             raise StopIteration
@@ -145,6 +153,7 @@ class Imagefiles(object):
                     with open(self.savefile,'w') as savefile:
                         json.dump(data,savefile)
 
+                    self.getcroppedimages(self.files[self.n])
 
                 if k == 27 or k==113:
                     break
@@ -154,17 +163,14 @@ class Imagefiles(object):
 
 if __name__=='__main__':
     print "ok"
+
     jsonfiles=[jsonfiles for jsonfiles in os.listdir('.') if '.json' in jsonfiles and 'boundingbox' in jsonfiles]
     if len(jsonfiles)==0:
-        F=Imagefiles(savefile='boundingbox.json',skipdone=False)
-    else:
-        print jsonfiles[0]
-        F=Imagefiles(savefile=jsonfiles[0],skipdone=False)
-    F.getcroppedimages()
+        jsonfiles=['boundingbox.json']
 
-    # F=Imagefiles(savefile='boundingbox_YFT.json',skipdone=True)
-    # for f in F:
-    #     print "----------------------"
+    # F=Imagefiles(savefile=jsonfiles[0],skipdone=False)
+    # F.getcroppedimages()
 
-
-
+    F=Imagefiles(savefile=jsonfiles[0],skipdone=True)
+    for f in F:
+        print "----------------------"
