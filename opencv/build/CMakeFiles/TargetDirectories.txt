@@ -1,0 +1,3 @@
+/home/venkat/GoogleDrive/repos/computervision/opencv/build/CMakeFiles/rebuild_cache.dir
+/home/venkat/GoogleDrive/repos/computervision/opencv/build/CMakeFiles/edit_cache.dir
+/home/venkat/GoogleDrive/repos/computervision/opencv/build/CMakeFiles/SIFTtest.dir
