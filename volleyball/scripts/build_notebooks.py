@@ -307,6 +307,50 @@ lat = np.array(res.latencies_s)
 print(f"median {np.median(lat):.1f}s, p90 {np.percentile(lat, 90):.1f}s over {len(lat)} rallies")"""),
 ]
 
+NB["06_datasets_to_s3.ipynb"] = [
+    (M, """# 06 · Public datasets straight into S3
+
+Run on a Studio space with a large disk (100 GB): Google Drive, SoccerNet and Roboflow downloads are staged on the
+space's disk, uploaded, and deleted; GitHub files stream straight into S3. Each dataset lands in
+`s3://<bucket>/datasets/<name>/raw/` with a `MANIFEST.json` (source, licence, date, sizes, sha256).
+
+**Licences.** SportsMOT and the Koshkina jersey weights/crops are **non-commercial**; the Volleyball dataset states
+no licence for the data. `--list` prints each one. Check before using them in a product."""),
+    (C, COMMON),
+    (C, """!pip install -q gdown SoccerNet roboflow boto3
+BUCKET = os.environ.get("VB_BUCKET", "vb-data-<account-id>")      # <- your bucket
+DEST = f"s3://{BUCKET}/datasets"
+!python scripts/datasets_to_s3.py --list"""),
+    (M, "## Small and open first (seconds): the public video + .dvw pair, and the expert .dvw files"),
+    (C, "!python scripts/datasets_to_s3.py --dest {DEST} ovdata pydatavolley_dvw"),
+    (M, "## The Volleyball dataset (Ibrahim et al.) and its ball and trajectory annotations\nLarge. If Google Drive refuses with a quota error, retry later or pass the old SFU zip with `--url`."),
+    (C, "!python scripts/datasets_to_s3.py --dest {DEST} --extract volleyball_ibrahim volleyball_ibrahim_ball volleyball_ibrahim_tracks"),
+    (M, "## Jersey numbers: SoccerNet jersey-2023, and the PARSeq weights fine-tuned on jerseys (non-commercial)"),
+    (C, """!python scripts/datasets_to_s3.py --dest {DEST} --extract soccernet_jersey
+!python scripts/datasets_to_s3.py --dest s3://{BUCKET}/models parseq_jersey_weights"""),
+    (M, "## Roboflow Universe sets (ball, court)\nNeeds a free Roboflow API key: app.roboflow.com → Settings → API Keys."),
+    (C, """os.environ["ROBOFLOW_API_KEY"] = ""   # <- paste, or set it in the terminal
+!python scripts/datasets_to_s3.py --dest {DEST} roboflow_ball_daniel roboflow_ball_tracker roboflow_volleyball01 roboflow_court"""),
+    (M, "## SportsMOT (non-commercial)\nSign up on Codalab, join the SportsMOT competition, copy the link under *Participate → Get Data*."),
+    (C, """SPORTSMOT_URL = ""   # <- the Codalab link
+if SPORTSMOT_URL:
+    !python scripts/datasets_to_s3.py --dest {DEST} sportsmot --url "{SPORTSMOT_URL}\""""),
+    (M, "## What is in the bucket"),
+    (C, """import boto3, json
+s3 = boto3.client("s3")
+rows = []
+for p in s3.get_paginator("list_objects_v2").paginate(Bucket=BUCKET, Prefix="datasets/", Delimiter="/"):
+    for cp in p.get("CommonPrefixes", []):
+        name = cp["Prefix"].split("/")[1]
+        try:
+            m = json.loads(s3.get_object(Bucket=BUCKET, Key=f"datasets/{name}/MANIFEST.json")["Body"].read())
+            rows.append({"dataset": name, "files": len(m["files"]), "GB": round(m["total_bytes"] / 1e9, 2),
+                         "commercial_ok": m["commercial_ok"], "licence": m["licence"]})
+        except s3.exceptions.NoSuchKey:
+            rows.append({"dataset": name, "files": None})
+import pandas as pd; pd.DataFrame(rows)"""),
+]
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     for name, cells in NB.items():

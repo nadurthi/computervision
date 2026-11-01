@@ -31,6 +31,7 @@ Then open the notebooks in order:
 | `03_tensorrt_and_determinism` | ONNX export, TensorRT engines with a pinned timing cache, speed table, byte-identical check |
 | `04_evaluate` | the skill rule on expert `.dvw` files; pipeline events against your hand labels |
 | `05_live_stream` | one-pass streaming mode with per-rally latency |
+| `06_datasets_to_s3` | public datasets (Volleyball, SportsMOT, SoccerNet jersey, Roboflow, openvolley) straight into your S3 bucket, with licences in a manifest |
 
 The notebooks are generated from `scripts/build_notebooks.py`; edit that file and re-run it rather than the JSON.
 
