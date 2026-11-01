@@ -1,0 +1,27 @@
+# Core (SageMaker Studio: start from a PyTorch 2.x GPU image, then `pip install -r requirements.txt`)
+numpy>=1.26
+scipy>=1.11
+opencv-python-headless>=4.9
+pyyaml>=6
+boto3>=1.34
+pandas>=2.1
+
+# Models
+rfdetr>=1.3                  # RF-DETR players + ball (COCO-pretrained)
+onnxruntime-gpu>=1.18        # RTMPose ONNX (CUDA execution provider)
+timm>=0.9                    # PARSeq via torch.hub
+pytorch-lightning>=2.1       # PARSeq via torch.hub (hubconf dependency)
+
+# Decoding
+torchcodec>=0.4              # NVDEC decoding into CUDA tensors (match it to your torch version)
+
+# Events
+openvolley-pydatavolley>=1.0 # reads the .dvw we write
+
+# TensorRT (notebook 03). Pick the build that matches the image's CUDA, e.g.:
+#   pip install tensorrt-cu12
+# onnx is needed for exports
+onnx>=1.15
+
+# tests
+pytest>=8

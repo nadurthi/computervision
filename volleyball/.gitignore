@@ -1,0 +1,11 @@
+outputs/
+engines/
+models/
+data/*.csv
+!data/labels_template.csv
+__pycache__/
+*.pyc
+.pytest_cache/
+*.mp4
+*.onnx
+*.engine

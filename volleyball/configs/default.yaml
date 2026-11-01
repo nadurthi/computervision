@@ -1,0 +1,52 @@
+# Copy this file per clip. Everything here maps 1:1 onto vb/config.py.
+video:
+  source: s3://YOUR-BUCKET/volleyball/clip.mp4   # or a local path, or srt://host:port for live
+  local_cache: /home/sagemaker-user/vb_cache
+  decoder: auto          # auto | nvdec | cpu
+  allow_decoder_fallback: false
+  start_s: 0
+  end_s: null
+  stride: 1
+  batch: 8
+
+detector:
+  variant: medium        # nano | small | medium | base | large
+  weights: null          # path to a fine-tuned checkpoint, or null for COCO
+  backend: torch         # torch | tensorrt (build the engine in notebook 03 first)
+  engine_path: engines/rfdetr_medium_b8.engine
+  player_thresh: 0.35
+  ball_thresh: 0.15
+
+pose:
+  model: rtmpose-m
+  onnx_path: models/rtmpose-m.onnx
+  backend: onnxruntime   # onnxruntime | tensorrt
+  engine_path: engines/rtmpose_m.engine
+  crops_on_gpu: true
+
+court:
+  # Fill these in notebook 01 (cell "pick court points"): pixel coordinates on the first frame
+  # and the matching court points in metres (X across 0..9, Y along 0..18, net at Y = 9).
+  seed_pixels: []
+  seed_court: []
+  propagate: true
+  near_side_is_home: true
+
+ball:
+  ball_diameter_px: 14    # measure on your footage: about 1/10 of a player's height at mid court
+
+touch:
+  raised_hand_rule: true
+
+identity:
+  enabled: true
+  home_roster: []          # optional: shirt numbers on the home team sheet
+  away_roster: []
+
+output:
+  out_dir: outputs
+  s3_prefix: null          # e.g. s3://YOUR-BUCKET/volleyball/runs
+  render: true
+  home_team: Home
+  away_team: Away
+  match_date: 11/01/2026
