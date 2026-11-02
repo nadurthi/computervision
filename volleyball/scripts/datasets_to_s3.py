@@ -10,8 +10,9 @@ Run it on a SageMaker Studio space (fast AWS network, credentials from the execu
 
 What "directly to S3" means per source:
   http         streamed from the web into a multipart S3 upload, never written to disk
-  gdrive_*     Google Drive needs gdown, which writes to a scratch dir first; the files are uploaded
-               and the scratch dir is deleted (use a space with enough disk, e.g. 100 GB)
+  gdrive_file  single Drive files: streamed straight into S3 with --direct (or when gdown is not
+               installed); otherwise gdown writes to a scratch dir, then upload + cleanup
+  gdrive_folder Drive folders need gdown: scratch dir, upload, cleanup (needs enough disk)
   soccernet    the SoccerNet downloader writes to scratch, then the same upload + cleanup
   roboflow     the Roboflow SDK writes to scratch, then the same upload + cleanup
 
@@ -37,6 +38,8 @@ from pathlib import Path
 
 GH_OVDATA = "https://raw.githubusercontent.com/openvolley/ovdata/master/inst/extdata/"
 GH_PYDV = "https://raw.githubusercontent.com/openvolley/py-datavolley/main/datavolley/data/"
+# single Google Drive files can be fetched without gdown; confirm=t skips the large-file warning page
+DRIVE_DIRECT = os.environ.get("VB_DRIVE_DIRECT_URL", "https://drive.usercontent.google.com/download?id={id}&export=download&confirm=t")
 
 
 def _q(name: str) -> str:
@@ -206,6 +209,9 @@ def fetch_http(d: Dataset, dest: Dest, force: bool, urls=None) -> list[dict]:
         key = f"{d.name}/raw/{rel}"
         req = urllib.request.Request(url, headers={"User-Agent": "vb-datasets/1.0"})
         with urllib.request.urlopen(req, timeout=120) as r:
+            if "drive" in url and "text/html" in (r.headers.get("Content-Type") or ""):
+                raise RuntimeError(f"{rel}: Google Drive returned a web page, not the file "
+                                   "(quota exceeded, access restricted or file moved); retry later or use gdown")
             length = int(r.headers.get("Content-Length") or -1)
             if not force and length > 0 and dest.size(key) == length:
                 print(f"  skip {rel} (already there, {length:,} bytes)")
@@ -242,6 +248,20 @@ def _extract_all(root: Path) -> None:
         with zipfile.ZipFile(z) as zf:
             zf.extractall(target)
         z.unlink()
+
+
+def _have_gdown() -> bool:
+    try:
+        import gdown  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def fetch_gdrive_direct(d: Dataset, dest: Dest, force: bool) -> list[dict]:
+    """Single Drive files streamed straight into the destination: no gdown, no scratch disk.
+    Archives are stored as downloaded (no --extract); unzip them where you use them."""
+    return fetch_http(d, dest, force, [(DRIVE_DIRECT.format(id=fid), rel) for fid, rel in d.files])
 
 
 def fetch_gdrive(d: Dataset, dest: Dest, force: bool, scratch: Path, extract: bool) -> list[dict]:
@@ -298,7 +318,8 @@ def fetch_roboflow(d: Dataset, dest: Dest, force: bool, scratch: Path, fmt: str)
 
 
 # ------------------------------------------------------------------ main
-def run(names: list[str], dest_uri: str, force=False, extract=False, url=None, scratch=None, fmt="coco") -> dict:
+def run(names: list[str], dest_uri: str, force=False, extract=False, url=None, scratch=None, fmt="coco",
+        direct=False) -> dict:
     dest = Dest(dest_uri)
     scratch = Path(scratch or tempfile.gettempdir())
     report = {}
@@ -312,6 +333,8 @@ def run(names: list[str], dest_uri: str, force=False, extract=False, url=None, s
         elif d.kind in ("gdrive_folder", "gdrive_file"):
             if url:          # fallback mirror (e.g. the SFU zip for volleyball_ibrahim)
                 files = fetch_http(d, dest, force, [(url, Path(urllib.parse.urlparse(url).path).name)])
+            elif d.kind == "gdrive_file" and (direct or not _have_gdown()):
+                files = fetch_gdrive_direct(d, dest, force)
             else:
                 files = fetch_gdrive(d, dest, force, scratch, extract)
         elif d.kind == "manual_url":
@@ -343,6 +366,8 @@ def main(argv=None):
     ap.add_argument("--url", help="direct link for manual_url datasets, or a mirror for a Drive dataset")
     ap.add_argument("--scratch", help="scratch dir for gdown/SoccerNet/Roboflow (default: system temp)")
     ap.add_argument("--format", default="coco", help="Roboflow export format (coco, yolov8, ...)")
+    ap.add_argument("--direct", action="store_true",
+                    help="stream single Google Drive files straight to the destination (no gdown, no scratch disk)")
     a = ap.parse_args(argv)
     if a.list or not a.names:
         for d in REGISTRY.values():
@@ -357,7 +382,7 @@ def main(argv=None):
     unknown = [n for n in names if n not in REGISTRY]
     if unknown:
         ap.error(f"unknown dataset(s): {unknown}; see --list")
-    print(json.dumps(run(names, a.dest, a.force, a.extract, a.url, a.scratch, a.format), indent=1))
+    print(json.dumps(run(names, a.dest, a.force, a.extract, a.url, a.scratch, a.format, a.direct), indent=1))
     return 0
 
 

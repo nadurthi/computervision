@@ -17,7 +17,7 @@ import datasets_to_s3 as D  # noqa: E402
 @pytest.fixture
 def server(tmp_path):
     root = tmp_path / "www"
-    (root / "scout").mkdir(parents=True)
+    (root / "scout").mkdir(parents=True)  # files added later under root are served too
     (root / "scout" / "&a b.dvw").write_bytes(b"[3SCOUT]\n" * 1000)
     (root / "clip.mp4").write_bytes(bytes(range(256)) * 4096)        # 1 MB
     handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
@@ -81,3 +81,22 @@ def test_registry_is_consistent():
 def test_manual_url_requires_url(tmp_path):
     with pytest.raises(SystemExit):
         D.run(["sportsmot"], str(tmp_path))
+
+
+def test_gdrive_direct_streams_without_gdown(tmp_path, server, monkeypatch):
+    root = tmp_path / "www"
+    (root / "drive").mkdir()
+    (root / "drive" / "FILEID").write_bytes(b"\x00\xffweights" * 1000)
+    (root / "drive" / "BLOCKED.html").write_text("<html>Google Drive - quota exceeded</html>")
+    monkeypatch.setattr(D, "DRIVE_DIRECT", server + "drive/{id}")
+    monkeypatch.setitem(sys.modules, "gdown", None)          # gdown not installed -> direct path
+    d = D.Dataset("toyd", "gdrive_file", "n/a", "toy", files=[("FILEID", "w.ckpt")])
+    monkeypatch.setitem(D.REGISTRY, "toyd", d)
+    out = tmp_path / "dest"
+    rep = D.run(["toyd"], str(out), scratch=str(tmp_path))
+    assert rep["toyd"] == {"files": 1, "bytes": 9000}
+    assert (out / "toyd/raw/w.ckpt").read_bytes() == b"\x00\xffweights" * 1000
+    bad = D.Dataset("toyb", "gdrive_file", "n/a", "toy", files=[("BLOCKED.html", "w.ckpt")])
+    monkeypatch.setitem(D.REGISTRY, "toyb", bad)
+    with pytest.raises(RuntimeError, match="web page"):
+        D.run(["toyb"], str(out), direct=True)
