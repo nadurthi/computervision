@@ -1,0 +1,195 @@
+<div id="nav"></div><div class="page"><nav class="toc" id="toc"></nav><div class="content">
+
+<h1>Spin stabilization and detumbling: a deep dive</h1>
+<p class="lead">A spinning body resists being tipped over. That one property kept the first satellites pointed, keeps a thrown football on its axis and keeps a spin-stabilized upper stage steady through a long burn. It also hides traps. A body spinning about the wrong axis can flip over with no torque at all, and a satellite that is a perfectly stable spinner on paper can end up tumbling end over end because its antennas flex. This page works through the rigid-body physics behind both effects and then turns to control: how to bring a tumbling spacecraft to rest with thrusters or wheels, which gain is optimal and why, and how a CubeSat does it with nothing but magnetic coils.</p>
+
+<p class="footnote">Every figure and animation below comes from a short Python simulation (Euler's equations + quaternion kinematics, DOP853 integrator): CODE_LINK. Companion page: <a href="/tutorials/algorithms/hjb-sparse-collocation/">sparse collocation for the HJB equation</a>, which recovers the optimal detumbling law of §7 numerically.</p>
+
+<div class="callout key"><b>On this page.</b>
+<ul>
+<li>§1–2: Euler's equations, and what "spin-stabilized" means physically (gyroscopic stiffness).</li>
+<li>§3–4: torque-free motion on the momentum sphere and the intermediate-axis theorem, with an animation of the flip.</li>
+<li>§5: energy dissipation and the major-axis rule, the lesson of Explorer 1.</li>
+<li>§6–8: detumbling with torque. Rate damping, the Lyapunov argument, the closed-form optimal law and its cost, and what changes when torque is limited.</li>
+<li>§9: magnetic B-dot detumbling on a 6U CubeSat, and why it stops at twice the orbital rate rather than zero.</li>
+</ul></div>
+
+<h2 id="setup">1 · The rigid body and Euler's equations</h2>
+<p>Put the body frame on the principal axes, so the inertia matrix is diagonal, $I=\operatorname{diag}(I_1,I_2,I_3)$. We order the axes so that $I_1&gt;I_2&gt;I_3$: axis 1 is the <b>major</b> axis, axis 2 the <b>intermediate</b> axis and axis 3 the <b>minor</b> axis. Throughout the page $I=\operatorname{diag}(14,10,8)\ \mathrm{kg\,m^2}$, the example used in the HJB paper.</p>
+<p>The angular momentum is $\mathbf H = I\boldsymbol\omega$. In an inertial frame Newton's law for rotation is simply $\dot{\mathbf H}_{\text{inertial}}=\boldsymbol\tau$. Written in the rotating body frame, the derivative picks up a transport term $\boldsymbol\omega\times\mathbf H$, which gives <b>Euler's equations</b>:</p>
+$$I\dot{\boldsymbol\omega} = (I\boldsymbol\omega)\times\boldsymbol\omega + \boldsymbol\tau
+\quad\Longleftrightarrow\quad
+\begin{aligned}
+I_1\dot\omega_1 &amp;= (I_2-I_3)\,\omega_2\omega_3 + \tau_1\\
+I_2\dot\omega_2 &amp;= (I_3-I_1)\,\omega_3\omega_1 + \tau_2\\
+I_3\dot\omega_3 &amp;= (I_1-I_2)\,\omega_1\omega_2 + \tau_3
+\end{aligned}$$
+<p>The attitude follows from the angular velocity. With a scalar-last unit quaternion $\mathbf q$ (body to inertial),</p>
+$$\dot{\mathbf q} = \tfrac12\,\mathbf q\otimes\begin{bmatrix}\boldsymbol\omega\\0\end{bmatrix}.$$
+<p>The rate equation does not depend on the attitude unless the torque does. So for torque-free motion and for every controller in §6–8 we can study $\boldsymbol\omega$ on its own. The quaternion is only needed to draw the body and, in §9, to rotate the Earth's magnetic field into body axes.</p>
+
+<figure style="margin:1.5em 0">
+<svg viewBox="0 0 660 360" style="width:100%;max-width:640px;height:auto;display:block;margin:auto" role="img" aria-label="A box-shaped body with its principal axes, angular velocity vector and angular momentum vector, which are not parallel">
+<defs>
+<marker id="sa" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0L10,5L0,10z" fill="context-stroke"/></marker>
+</defs>
+<polygon points="230,150 380,120 440,170 290,200" fill="#bfdbfe" stroke="#1f2937" stroke-width="1.2"/>
+<polygon points="230,150 290,200 290,300 230,250" fill="#bbf7d0" stroke="#1f2937" stroke-width="1.2"/>
+<polygon points="290,200 440,170 440,270 290,300" fill="#fecaca" stroke="#1f2937" stroke-width="1.2"/>
+<line x1="335" y1="210" x2="335" y2="40" stroke="#16a34a" stroke-width="2.5" marker-end="url(#sa)"/>
+<text x="326" y="40" fill="#16a34a" font-size="15" font-family="sans-serif" text-anchor="end">e₃ (minor, I₃)</text>
+<line x1="335" y1="210" x2="545" y2="168" stroke="#dc2626" stroke-width="2.5" marker-end="url(#sa)"/>
+<text x="500" y="158" fill="#dc2626" font-size="15" font-family="sans-serif">e₂ (intermediate)</text>
+<line x1="335" y1="210" x2="210" y2="315" stroke="#2563eb" stroke-width="2.5" marker-end="url(#sa)"/>
+<text x="120" y="333" fill="#2563eb" font-size="15" font-family="sans-serif">e₁ (major, I₁)</text>
+<line x1="335" y1="210" x2="420" y2="62" stroke="#111827" stroke-width="3" marker-end="url(#sa)"/>
+<text x="428" y="72" fill="#111827" font-size="17" font-family="sans-serif" font-style="italic">ω</text>
+<line x1="335" y1="210" x2="395" y2="45" stroke="#7c3aed" stroke-width="3" stroke-dasharray="7 4" marker-end="url(#sa)"/>
+<text x="378" y="30" fill="#7c3aed" font-size="16" font-family="sans-serif" font-weight="bold">H = Iω</text>
+<path d="M300,70 A60,18 0 1,0 372,62" fill="none" stroke="#6b7280" stroke-width="1.4" marker-end="url(#sa)"/>
+<line x1="335" y1="210" x2="250" y2="120" stroke="#ea580c" stroke-width="2.5" marker-end="url(#sa)"/>
+<text x="196" y="112" fill="#ea580c" font-size="15" font-family="sans-serif">τ (control)</text>
+<text x="380" y="315" fill="#374151" font-size="13" font-family="sans-serif">H ∥ ω only when ω is on a principal axis;</text>
+<text x="380" y="335" fill="#374151" font-size="13" font-family="sans-serif">otherwise ω × H ≠ 0 and the body wobbles.</text>
+</svg>
+<figcaption style="font-size:0.9em;color:#6b7280">Figure 1. The body frame. Faces are colored by the principal axis they are normal to (blue: major, red: intermediate, green: minor), the same colors used in every figure and animation below. Because the inertias differ, $\mathbf H=I\boldsymbol\omega$ leans away from $\boldsymbol\omega$ toward the major axis.</figcaption>
+</figure>
+
+<h2 id="stiffness">2 · What "spin-stabilized" means</h2>
+<p>Spin a body about a principal axis with rate $\Omega$, so $\mathbf H = I_s\Omega\,\hat{\mathbf e}_s$, and apply a small disturbance torque $\boldsymbol\tau_d$ perpendicular to $\mathbf H$. Since $\dot{\mathbf H}=\boldsymbol\tau_d$ in inertial space, the momentum vector does not tip toward the torque. It moves sideways, perpendicular to both, at the <b>precession rate</b></p>
+$$\dot\theta \approx \frac{\|\boldsymbol\tau_d\|}{I_s\Omega}.$$
+<p>The spin axis therefore drifts at a rate inversely proportional to the stored momentum, and a disturbance that would tumble a non-spinning body in minutes only slowly walks the axis of a spinner. With $I_s=14\ \mathrm{kg\,m^2}$ and a 60 rpm spin ($\Omega=2\pi$ rad/s), a solar-pressure torque of $10^{-5}$ N·m drifts the axis by about 0.6° per day. That gyroscopic stiffness is all spin stabilization is. It needs no sensors, no actuators and no power, which is why Explorer 1, the early Intelsat and GOES satellites, Pioneer 10/11 and most solid-rocket upper stages were spinners. The price is that only one axis is pointed, and the rest of this page is about the conditions under which that one axis actually stays put.</p>
+
+<h2 id="polhode">3 · Torque-free motion on the momentum sphere</h2>
+<p>With $\boldsymbol\tau=0$, two quantities are conserved. Dotting Euler's equation with $\boldsymbol\omega$ and with $I\boldsymbol\omega$ kills the gyroscopic term both times, because $(I\boldsymbol\omega)\times\boldsymbol\omega$ is perpendicular to both:</p>
+$$2T = \boldsymbol\omega^{\mathsf T}I\boldsymbol\omega = \frac{H_1^2}{I_1}+\frac{H_2^2}{I_2}+\frac{H_3^2}{I_3},
+\qquad
+\|\mathbf H\|^2 = H_1^2+H_2^2+H_3^2 .$$
+<p>In body-frame momentum coordinates the first is an ellipsoid with semi-axes $\sqrt{2T I_i}$, and the second is a sphere of radius $\|\mathbf H\|$. The body-frame momentum vector must lie on both, so it moves along their intersection curve, a <b>polhode</b>. The energy ranges from $T_{\min}=H^2/2I_1$ (pure spin about the major axis, where the ellipsoid touches the sphere from inside at $\pm\hat{\mathbf e}_1$) to $T_{\max}=H^2/2I_3$ (pure spin about the minor axis).</p>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_polhodes.png" alt="Polhodes on the momentum sphere and a 2D cut showing the momentum circle and three energy ellipses." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 2. Left: polhodes traced by simulation for many energies at fixed $\|\mathbf H\|$. Low-energy curves (blue) are small loops around the major axis, high-energy curves (green) loop around the minor axis, and the two families are separated by the <b>separatrix</b> (red) at $T=H^2/2I_2$, which passes through the intermediate-axis points. Right: the same picture cut through the $H_1$–$H_3$ plane. The circle is the momentum sphere and each ellipse an energy surface. Where they cross is where motion can happen.</figcaption></figure>
+
+<p>Two things follow directly from the picture. Near the major and minor axes the polhodes are small closed loops, so a slightly perturbed spin about those axes stays close to them. Near the intermediate axis, the separatrix runs right through the equilibrium: a small perturbation puts the momentum on a curve that carries it all the way around the sphere to the opposite pole.</p>
+
+<h2 id="dzhanibekov">4 · The intermediate-axis theorem</h2>
+<p>Linearize about pure spin $\boldsymbol\omega=\Omega\hat{\mathbf e}_i$. Write $\boldsymbol\omega = \Omega\hat{\mathbf e}_i + \delta\boldsymbol\omega$ and let $j,k$ be the other two axes. To first order $\delta\omega_i$ is constant and the transverse rates obey</p>
+$$I_j\,\delta\dot\omega_j = (I_k-I_i)\,\Omega\,\delta\omega_k,\qquad I_k\,\delta\dot\omega_k = (I_i-I_j)\,\Omega\,\delta\omega_j
+\;\;\Longrightarrow\;\;
+\delta\ddot\omega_j = \lambda^2\,\delta\omega_j,\quad
+\lambda^2=\Omega^2\frac{(I_i-I_j)(I_k-I_i)}{I_jI_k}.$$
+<p>If $I_i$ is the largest or the smallest inertia the two factors in the numerator have opposite signs, $\lambda^2&lt;0$, and the perturbation oscillates. This is the nutation (wobble) of a stable spinner. If $I_i$ is the intermediate inertia, both factors have the same sign, $\lambda^2&gt;0$, and the perturbation grows exponentially. For our body at $\Omega=1$ rad/s:</p>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Spin axis</th><th>$\lambda^2$ [s⁻²]</th><th>Behavior</th><th>Rate [rad/s]</th></tr>
+<tr><td>major, $I_1=14$</td><td class="num">−0.300</td><td>stable (nutation)</td><td class="num">nutation 0.548</td></tr>
+<tr><td>intermediate, $I_2=10$</td><td class="num">+0.071</td><td>unstable</td><td class="num">growth 0.267 (e-folds every 3.7 s)</td></tr>
+<tr><td>minor, $I_3=8$</td><td class="num">−0.086</td><td>stable (nutation)</td><td class="num">nutation 0.293</td></tr>
+</table></div>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_three_axes.png" alt="Body rates for spin about each of the three principal axes with a small perturbation: only the intermediate-axis spin reverses." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 3. 1 rad/s spin about each axis plus a 0.02 rad/s perturbation on the other two. About the major and minor axes the perturbation just oscillates. About the intermediate axis it grows from 0.02 at the predicted rate, $\omega_2$ reverses sign, and the process repeats periodically: the body flips over, flips back, and so on forever.</figcaption></figure>
+
+<figure style="margin:1.5em 0"><video src="IMG/anim_dzhanibekov.mp4" autoplay loop muted playsinline controls style="width:100%;height:auto"></video><figcaption style="font-size:0.9em;color:#6b7280">Animation 1. The same intermediate-axis spin, rendered from the simulated quaternion. The box has the proportions of a uniform block with the inertia ratios $14:10:8$. The angular momentum (dashed purple) stays fixed in space the whole time; the body turns itself over around it. Cosmonaut Vladimir Dzhanibekov saw exactly this with a wing nut spinning off a bolt on Salyut 7 in 1985, which is why it is often called the Dzhanibekov effect. It is also the "tennis racket theorem": flip a racket about the axis in the plane of the strings and it comes back with a half-twist.</figcaption></figure>
+
+<p>Nothing in the instability needs a torque, a flaw in the body or numerical error. It is pure geometry of the momentum sphere, and every rigid body with three distinct principal inertias has it.</p>
+
+<h2 id="dissipation">5 · Energy dissipation and the major-axis rule</h2>
+<p>Real spacecraft are not rigid. Sloshing propellant, flexing antennas, nutation dampers and even heat-pipe fluid move relative to the main body. Internal motion exchanges momentum only within the spacecraft, so $\|\mathbf H\|$ is still conserved, but friction in that motion turns kinetic energy into heat, so $T$ only goes down.</p>
+<p>A simple model that has exactly these properties is the internal torque</p>
+$$\boldsymbol\tau = k\,\mathbf H\times(\mathbf H\times\boldsymbol\omega),\qquad
+\frac{d\|\mathbf H\|^2}{dt} = 2\mathbf H\cdot\boldsymbol\tau = 0,\qquad
+\dot T = \boldsymbol\omega\cdot\boldsymbol\tau = -k\left(\|\mathbf H\|^2\|\boldsymbol\omega\|^2-(\mathbf H\cdot\boldsymbol\omega)^2\right)\le 0 .$$
+<p>On the momentum sphere this means the momentum vector slides across polhodes toward lower energy. The lowest energy on the sphere is $H^2/2I_1$, at the major axis. So with any dissipation at all, the <b>only</b> stable spin is about the major axis. A minor-axis spinner, stable in rigid-body theory, slowly crosses the separatrix and ends up in a flat spin.</p>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_dissipation.png" alt="With internal dissipation, a spin that starts near the minor axis migrates across the separatrix to the major axis, while the angular momentum magnitude stays constant." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 4. A spin that starts close to the minor axis with internal damping $k=0.0015$. Left: the body-frame momentum spirals off the minor-axis pole, crosses the separatrix and settles on the major axis, never leaving the sphere. Middle: $\omega_3$ dies out and $\omega_1$ takes over. Right: $T$ drains from the minor-axis level through the separatrix level to the major-axis level while $\|\mathbf H\|$ stays at 1 to integration precision.</figcaption></figure>
+
+<div class="callout warn"><b>Explorer 1 (1958).</b> The first U.S. satellite was a long, thin pencil spun about its long axis, which is its <i>minor</i> axis. Four flexible whip antennas dissipated energy, and the satellite was soon nutating with a growing cone angle until it settled into a flat spin, end over end about its major axis. The episode is how the major-axis rule entered spacecraft design. A passive spinner must spin about its major axis, or, if it must spin about the minor axis, carry an active nutation damper or a despun section (a dual-spin spacecraft) whose damping flips the sign of the energy argument.</div>
+
+<h2 id="damping">6 · Detumbling: rate damping and its Lyapunov function</h2>
+<p>Now add a control torque, from thrusters or reaction wheels, with the goal of bringing $\boldsymbol\omega$ to zero. This is detumbling, the first thing a spacecraft does after separation from the launcher. The simplest law is <b>rate damping</b>,</p>
+$$\mathbf u = -k\,\boldsymbol\omega,\qquad k&gt;0 .$$
+<p>The kinetic energy is a Lyapunov function. Using Euler's equation and the fact that the gyroscopic term is perpendicular to $\boldsymbol\omega$,</p>
+$$\dot T = \boldsymbol\omega^{\mathsf T}I\dot{\boldsymbol\omega} = \boldsymbol\omega^{\mathsf T}\big[(I\boldsymbol\omega)\times\boldsymbol\omega\big] + \boldsymbol\omega^{\mathsf T}\mathbf u = -k\|\boldsymbol\omega\|^2 .$$
+<p>The nonlinear coupling drops out exactly, so the result is global: any initial tumble, however fast, decays. Since $2T/I_{\max}\le\|\boldsymbol\omega\|^2\le 2T/I_{\min}$, the energy is sandwiched between two exponentials,</p>
+$$T_0\,e^{-2kt/I_{\min}}\;\le\;T(t)\;\le\;T_0\,e^{-2kt/I_{\max}} .$$
+
+<h2 id="optimal">7 · The optimal detumbling law</h2>
+<p>Which gain? Pose the problem as optimal control with a quadratic cost on rate and torque,</p>
+$$J = \int_0^\infty \left(q\,\|\boldsymbol\omega\|^2 + r\,\|\mathbf u\|^2\right)dt .$$
+<p>The Hamilton–Jacobi–Bellman equation for the value function $V(\boldsymbol\omega)$ is</p>
+$$0=\min_{\mathbf u}\Big[q\|\boldsymbol\omega\|^2+r\|\mathbf u\|^2+\nabla V^{\mathsf T}I^{-1}\big((I\boldsymbol\omega)\times\boldsymbol\omega+\mathbf u\big)\Big],
+\qquad \mathbf u^* = -\tfrac{1}{2r}I^{-1}\nabla V .$$
+<p>Try the kinetic-energy shape $V = c\,\boldsymbol\omega^{\mathsf T}I\boldsymbol\omega$. Then $\nabla V = 2cI\boldsymbol\omega$, the gyroscopic term contributes $2c\,\boldsymbol\omega^{\mathsf T}[(I\boldsymbol\omega)\times\boldsymbol\omega]=0$ again, $\mathbf u^*=-(c/r)\boldsymbol\omega$, and the HJB equation collapses to $(q - c^2/r)\|\boldsymbol\omega\|^2 = 0$. Hence (Debs &amp; Athans, 1969)</p>
+$$\boxed{\;V(\boldsymbol\omega)=\sqrt{qr}\;\boldsymbol\omega^{\mathsf T}I\boldsymbol\omega,\qquad \mathbf u^* = -\sqrt{q/r}\;\boldsymbol\omega\;}$$
+<p>The optimal law for this nonlinear system is plain rate damping with gain $k^*=\sqrt{q/r}$, and its value function is twice $\sqrt{qr}$ times the kinetic energy. It is also exactly what LQR gives on the linearization about rest ($A=0$, $B=I^{-1}$): the Riccati equation $PBR^{-1}B^{\mathsf T}P=Q$ has the solution $P=\sqrt{qr}\,I$. Linearization usually loses something; here it loses nothing, because the only nonlinearity is the gyroscopic term and it does no work on $V$.</p>
+<p>The same trick gives the cost of <i>any</i> gain in closed form. With $\mathbf u=-k\boldsymbol\omega$, $\frac{d}{dt}(\boldsymbol\omega^{\mathsf T}I\boldsymbol\omega) = -2k\|\boldsymbol\omega\|^2$, so $\int_0^\infty\|\boldsymbol\omega\|^2dt=\boldsymbol\omega_0^{\mathsf T}I\boldsymbol\omega_0/2k$ and</p>
+$$J(k)=\frac{q+rk^2}{2k}\;\boldsymbol\omega_0^{\mathsf T}I\boldsymbol\omega_0,$$
+<p>which is minimized at $k=\sqrt{q/r}$ with $J^*=V(\boldsymbol\omega_0)$.</p>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_cost_vs_gain.png" alt="Total cost versus rate-damping gain: simulations lie on the closed-form curve, with the minimum at the optimal gain." style="width:100%;max-width:760px;height:auto;display:block;margin:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 5. Total cost of rate damping from $\boldsymbol\omega_0=(0.6,-0.7,0.8)$ rad/s with $q=50$, $r=3$. Each dot is a 60 s nonlinear simulation; the curve is the closed form. Too small a gain pays for slow decay, too large a gain pays for torque. The simulated minimum is 184.50 at the grid point $k=4.18$, against the analytic $J^*=V(\boldsymbol\omega_0)=184.45$ at $k^*=4.08$.</figcaption></figure>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_value.png" alt="Ellipsoidal level sets of the value function with closed-loop trajectories, and kinetic energy decay between two exponential bounds." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 6. Left: level sets of $V$ are ellipsoids $\boldsymbol\omega^{\mathsf T}I\boldsymbol\omega=c$. Six trajectories that start on the same ellipsoid under a deliberately weak gain ($q=5$, $r=30$, $k^*=0.41$). They curl, because the gyroscopic term keeps rotating $\boldsymbol\omega$ within each energy surface, but they cross every ellipsoid inward. Right: the kinetic energy of one trajectory stays between the two exponential bounds of §6.</figcaption></figure>
+
+<figure style="margin:1.5em 0"><video src="IMG/anim_detumble.mp4" autoplay loop muted playsinline controls style="width:100%;height:auto"></video><figcaption style="font-size:0.9em;color:#6b7280">Animation 2. The optimal law with $q=50$, $r=3$ detumbling the body from $\boldsymbol\omega_0=(0.6,-0.7,0.8)$ rad/s. Each rate decays at roughly $k^*/I_i$, so the minor-axis rate $\omega_3$ dies first and the major-axis rate $\omega_1$ last, while the gyroscopic coupling bends the curves early on. The body glides to rest in about 12 s.</figcaption></figure>
+
+<p>This is the problem used as the second example on the <a href="/tutorials/algorithms/hjb-sparse-collocation/">HJB sparse-collocation page</a>. Given 84 candidate monomials in $(\omega_1,\omega_2,\omega_3)$ and no hint about the answer, the ℓ1 collocation method keeps exactly the three terms $\omega_1^2,\omega_2^2,\omega_3^2$ with coefficients $\sqrt{qr}\,I_i$, which is a good test that the numerical method finds structure rather than imposing it.</p>
+
+<h2 id="limits">8 · When torque is limited</h2>
+<p>Thrusters and wheels have a maximum torque. Two common responses are to saturate the linear law per axis, $u_i=-u_{\max}\tanh(k\omega_i/u_{\max})$, or to go fully bang-bang, $u_i=-u_{\max}\operatorname{sign}(\omega_i)$. Both keep the Lyapunov argument, since $\dot T=\boldsymbol\omega^{\mathsf T}\mathbf u$ and each term $\omega_iu_i$ is still non-positive. Bang-bang gives something stronger. Because $\|\boldsymbol\omega\|_1\ge\|\boldsymbol\omega\|_2\ge\sqrt{2T/I_{\max}}$,</p>
+$$\dot T = -u_{\max}\|\boldsymbol\omega\|_1 \le -u_{\max}\sqrt{2T/I_{\max}}
+\quad\Longrightarrow\quad
+\frac{d\sqrt T}{dt}\le -\frac{u_{\max}}{\sqrt{2I_{\max}}},\qquad t_f\le\frac{\sqrt{2I_{\max}T_0}}{u_{\max}},$$
+<p>so the body stops in <b>finite time</b>. For our case, $T_0=7.53$ J and $u_{\max}=1$ N·m, the bound is 14.5 s, and the simulation stops at about 10 s.</p>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_detumble.png" alt="Comparison of five detumbling laws: body rate, torque magnitude and accumulated cost." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 7. Five laws from the same tumble, all scored with $q=50$, $r=3$. Left: $\|\boldsymbol\omega\|$ on a log scale. Middle: torque magnitude. Right: running cost, with the optimal value $V(\boldsymbol\omega_0)$ dashed.</figcaption></figure>
+
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Law</th><th>Total cost $J$</th><th>Peak $\|\mathbf u\|$ [N·m]</th><th>Time to 1% of $\|\boldsymbol\omega_0\|$ [s]</th></tr>
+<tr><td>rate damping, $k=1$</td><td class="num">389</td><td class="num">1.2</td><td class="num">&gt; 20</td></tr>
+<tr><td><b>optimal, $k^*=4.08$</b></td><td class="num"><b>184.4</b> (= $V(\boldsymbol\omega_0)$)</td><td class="num">5.0</td><td class="num">13.1</td></tr>
+<tr><td>rate damping, $k=12$</td><td class="num">302</td><td class="num">14.6</td><td class="num">4.5</td></tr>
+<tr><td>saturated, $|u_i|\le1$</td><td class="num">260</td><td class="num">1.7</td><td class="num">16.2</td></tr>
+<tr><td>bang-bang, $|u_i|=1$</td><td class="num">264</td><td class="num">1.7</td><td class="num">9.9</td></tr>
+</table></div>
+<p>The table is a reminder of what "optimal" means. The optimal law has the lowest cost by construction, but it is neither the fastest (a high gain is) nor the gentlest on the actuator (the torque-limited laws are). The weights $q$ and $r$ are the dial between those, and the torque-limited laws show that with a hard actuator limit a constant-magnitude torque, switched by the sign of each rate, is both simple and quick.</p>
+
+<h2 id="bdot">9 · Magnetic detumbling: the B-dot law</h2>
+<p>Small satellites usually detumble with <b>magnetorquers</b>: coils that create a magnetic dipole $\mathbf m$ and feel a torque $\boldsymbol\tau=\mathbf m\times\mathbf B$ from the Earth's field. The catch is visible in the cross product. No torque can be made along $\mathbf B$, so the system is underactuated at every instant and only becomes controllable on average as the field direction changes around the orbit.</p>
+<p>The classic answer is <b>B-dot</b> control, which needs only a magnetometer. In the body frame the measured field direction $\hat{\mathbf b}=\mathbf B/\|\mathbf B\|$ changes mostly because the body rotates, $\dot{\hat{\mathbf b}}\approx-\boldsymbol\omega\times\hat{\mathbf b}$, so its derivative is a rate measurement in disguise. The normalized law of Avanzini &amp; Giulietti (2012) commands</p>
+$$\mathbf m = -\frac{k}{\|\mathbf B\|}\,\dot{\hat{\mathbf b}}
+\quad\Longrightarrow\quad
+\boldsymbol\tau = \mathbf m\times\mathbf B \approx -k\left(\mathbf 1_3-\hat{\mathbf b}\hat{\mathbf b}^{\mathsf T}\right)\boldsymbol\omega ,$$
+<p>which is rate damping on the components of $\boldsymbol\omega$ perpendicular to the field, with $\dot T\approx-k\|\boldsymbol\omega_\perp\|^2\le0$. Their recommended gain is $k=2n(1+\sin\xi)I_{\min}$, where $n$ is the orbital mean motion and $\xi$ the inclination to the geomagnetic equator.</p>
+<p>The simulation uses a 6U-class CubeSat, $I=\operatorname{diag}(0.10,0.08,0.05)$ kg·m², with coils saturating at 0.2 A·m², in a 500 km sun-synchronous orbit (97.4°, period 94.5 min) through a tilt-free dipole field of $3.12\times10^{-5}$ T at the equatorial surface. The magnetometer derivative includes the rotation of the field along the orbit, as a real finite-difference measurement would.</p>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_bdot.png" alt="B-dot detumble of a CubeSat over four orbits: rate magnitude falling to about twice the orbital rate, body rates, and saturated dipole commands." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 8. B-dot detumble from 15.7°/s. The coils saturate (bang-bang) for the first half orbit; the rate is below 1°/s after 0.57 orbits and reaches its floor within about one orbit. Note that $\omega_1$, the major axis, is the last to decay: the gyroscopic coupling pushes the residual tumble toward the major axis, as in §5. The rate does not go to zero. It settles at about $2n=0.127$°/s (0.15°/s at the end of the run) and oscillates around it twice per orbit.</figcaption></figure>
+
+<p>Why $2n$? In a near-polar orbit the dipole field direction rotates through 720° in inertial space each orbit: horizontal over the equator, vertical over the poles, horizontal again but reversed over the other side. B-dot damps the body's rotation <i>relative to the field</i>, so the body ends up following the field, which turns at twice the orbital rate. That is a feature for the next phase of the mission: a slowly rotating, well-damped body is exactly the starting condition for an attitude-determination filter and for the pointing controller that takes over.</p>
+
+<h2 id="takeaways">10 · Takeaways</h2>
+<ul>
+<li><b>Spin about the major axis.</b> Rigid-body theory allows major or minor axis spins, the intermediate axis never. Energy dissipation, which every real vehicle has, rules out the minor axis too.</li>
+<li><b>The gyroscopic term does no work.</b> That one fact makes kinetic energy a global Lyapunov function, makes rate damping globally stable, and makes the nonlinear optimal law identical to the LQR law.</li>
+<li><b>The optimal detumbling law is $\mathbf u=-\sqrt{q/r}\,\boldsymbol\omega$,</b> with value $\sqrt{qr}\,\boldsymbol\omega^{\mathsf T}I\boldsymbol\omega$ and cost $J(k)=\frac{q+rk^2}{2k}\boldsymbol\omega_0^{\mathsf T}I\boldsymbol\omega_0$ for any other gain.</li>
+<li><b>With limited torque, bang-bang stops the body in finite time,</b> with a bound $\sqrt{2I_{\max}T_0}/u_{\max}$ that is easy to compute at design time.</li>
+<li><b>B-dot detumbles with a magnetometer and three coils,</b> and stops at about twice the orbital rate because it damps motion relative to a field that itself rotates.</li>
+</ul>
+
+<h2 id="reproduce">11 · Reproducing it</h2>
+<pre class="wp-block-code"><code>pip install numpy scipy matplotlib     # ffmpeg for the MP4 animations
+python fig_freebody.py                 # Figs 2–4: polhodes, three axes, dissipation
+python fig_control.py                  # Figs 5–8 + outputs/control_stats.json
+python animations.py                   # Dzhanibekov flip and optimal detumble (MP4 + GIF)</code></pre>
+<p><code>spin.py</code> holds everything: Euler's equations and quaternion kinematics, the energy and momentum invariants, the controllers (rate damping, Debs–Athans, saturated, bang-bang, internal dissipation) and the dipole field model with the normalized B-dot law.</p>
+
+<h2 id="refs">12 · References</h2>
+<ul>
+<li>A. R. Debs, M. Athans. On the optimal angular velocity control of asymmetrical space vehicles. <i>IEEE Trans. Automatic Control</i> 14(1):80–83, 1969.</li>
+<li>G. Avanzini, F. Giulietti. Magnetic detumbling of a rigid spacecraft. <i>J. Guidance, Control, and Dynamics</i> 35(4):1326–1334, 2012.</li>
+<li>P. C. Hughes. <i>Spacecraft Attitude Dynamics.</i> Wiley, 1986 (Dover reprint 2004). Chapters on torque-free motion, energy sink analysis and dual-spin stability.</li>
+<li>F. L. Markley, J. L. Crassidis. <i>Fundamentals of Spacecraft Attitude Determination and Control.</i> Springer, 2014.</li>
+<li>H. Schaub, J. L. Junkins. <i>Analytical Mechanics of Space Systems</i>, 4th ed. AIAA, 2018.</li>
+<li>M. Lovera, A. Astolfi. Spacecraft attitude control using magnetic actuators. <i>Automatica</i> 40(8):1405–1414, 2004.</li>
+<li>N. Adurthi, P. Singla, M. Majji. Sparse approximation-based collocation scheme for nonlinear optimal feedback control design. <i>J. Guidance, Control, and Dynamics</i> 40(2):248–264, 2017.</li>
+</ul>
+<p class="footnote">Related: <a href="/tutorials/algorithms/hjb-sparse-collocation/">Sparse collocation for the HJB equation</a> · <a href="/tutorials/misc/lincov/">Linear covariance analysis</a> · <a href="/tutorials/gnc/">back to GNC</a>.</p>
+
+</div></div>
