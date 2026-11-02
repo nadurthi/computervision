@@ -1,0 +1,163 @@
+<div id="nav"></div><div class="page"><nav class="toc" id="toc"></nav><div class="content">
+
+<h1>Fitting a density from 21 points: CUT points, Gauss–Hermite grids and an L1 linear program</h1>
+<p class="lead">Suppose you can only evaluate a 2D probability density at a handful of points, because each evaluation means integrating a trajectory or running a simulation. You want a closed-form approximation of the whole surface: something you can integrate, sample from and evaluate anywhere. This page fits \(f(\mathbf x)\approx \exp\big(p(\mathbf x)\big)\) with a polynomial \(p\) found by one <b>linear program</b> with an L1 penalty, and compares three ways of choosing where to evaluate \(f\): a <b>uniform grid</b>, a <b>Gauss–Hermite</b> tensor grid and <b>CUT-8</b> points. With 21 points, CUT-8 gets 4.1 % error. The two 25-point grids get 14–15 %. The reason turns out to be linear algebra, not quadrature accuracy.</p>
+
+<p class="footnote">The method is a Python port of <code>get_interp_pdf_0I_2D_gobackget_L1.m</code> from my method-of-characteristics filtering code (<a href="https://github.com/nadurthi/moc2">nadurthi/moc2</a>), where the propagated density is known only at the points that were propagated. The port uses no MATLAB or CVX: the problem is written out as an explicit LP and solved with SciPy's HiGHS. Code, point sets and every figure on this page: CODE_LINK.</p>
+
+<figure style="margin:1.5em 0"><img src="IMG/contours_filled.png" alt="Truth and the three degree-6 fits as filled contours, with error maps on a shared scale and an error bar chart." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 1. The result in one picture. Top: the true density (a heavy-tailed banana) and the degree-6 fits from each point set, on the same color levels. Bottom: fit − truth on one shared scale, and the error inside the sampled region. Both grids flatten the peak into a wide ridge. CUT-8 keeps it.</figcaption></figure>
+
+<h2 id="model">1 · The model: a polynomial in log space</h2>
+<p>The approximation is an exponential family with polynomial sufficient statistics:</p>
+$$ f(\mathbf x)\;\approx\;\hat f(\mathbf x)=\exp\!\Big(\sum_{i=1}^{n}\lambda_i\,\phi_i(\mathbf x)\Big),\qquad \phi_i(x,y)=x^{a_i}y^{b_i},\quad a_i+b_i\le N_m . $$
+<p>Working in log space has three advantages. \(\hat f\) is positive everywhere by construction. A Gaussian is exactly a degree-2 member of the family, so the model starts from the right shape and higher degrees add skew, curvature and heavy tails. And this is the maximum-entropy form for matching the moments \(\mathbb E[\phi_i]\), which is where the \(\lambda\) name comes from. With a total-degree basis in \(d\) dimensions there are</p>
+$$ n=\binom{d+N_m}{N_m}\qquad\Rightarrow\qquad n=28 \ \text{ for } d=2,\ N_m=6 $$
+<p>unknowns. Evaluating the basis at \(N\) points gives the design matrix \(A\in\mathbb R^{N\times n}\), \(A_{ji}=\phi_i(\mathbf x_j)\), and the data are \(b_j=\log f(\mathbf x_j)\). With 21–25 points and 28 unknowns, the problem is underdetermined. The point set and the regularizer decide which of the infinitely many interpolants you get.</p>
+
+<div class="callout key"><b>The test surface.</b> A Student-t banana (\(\nu=4\)): $$\log f = -\tfrac{\nu+1}{2}\log\!\Big(1+\tfrac{q}{\nu}\Big),\qquad q=\Big(\tfrac{x}{0.35}\Big)^2+\Big(\tfrac{y-1.6x^2+0.35}{0.22}\Big)^2 .$$ It has the curved shape of the usual Gaussian banana, but its log is <i>not</i> a polynomial, so no degree can represent it exactly. The Gaussian banana's log is exactly a degree-4 polynomial and makes a misleadingly easy test (§7).</div>
+
+<h2 id="points">2 · Three ways to choose 21–25 points</h2>
+<p>All three sets are defined for a standard normal, \(\mathbf x\sim\mathcal N(0,I)\), and then scaled into the fitting box (§2.4). Figure 2 shows them in their own coordinates, with marker area proportional to quadrature weight.</p>
+<figure style="margin:1.5em 0"><img src="IMG/fig_points_raw.png" alt="Uniform grid, Gauss-Hermite 5x5 grid and CUT-8 points in standard-normal coordinates with weights as marker size." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 2. The point sets in standard-normal coordinates. Marker area ∝ quadrature weight, dotted circles at 1σ, 2σ and 3σ. CUT-8 sits on four rings, the outermost at 3.6σ.</figcaption></figure>
+
+<h3 id="uniform">2.1 Uniform grid</h3>
+<p>A 5 × 5 tensor grid of equally spaced nodes, with equal weights. It has no quadrature optimality at all and serves as the baseline.</p>
+
+<h3 id="gh">2.2 Gauss–Hermite</h3>
+<p>The 5-node Gauss–Hermite rule (probabilists' version) places nodes at the roots of the Hermite polynomial \(He_5\), and is exact for every 1D polynomial up to degree \(2\cdot5-1=9\):</p>
+$$ \int g(x)\,\mathcal N(x;0,1)\,dx=\sum_{k=1}^{5}w_k\,g(x_k)\quad\text{for }\deg g\le 9,\qquad x_k\in\{0,\pm1.356,\pm2.857\},\ w_k\in\{0.533,0.222,0.011\}. $$
+<p>The 2D tensor product uses all 25 pairs \((x_k,x_l)\) with weights \(w_kw_l\). It is exact for \(x^iy^j\) whenever \(i\le 9\) <i>and</i> \(j\le 9\), a square in the \((i,j)\) plane. Its cost is \(5^d\) points, which grows exponentially with dimension.</p>
+
+<h3 id="cut">2.3 CUT-8: Conjugate Unscented Transformation</h3>
+<p>CUT rules (Adurthi, Singla &amp; Singh) keep the unscented transform's idea of a few symmetric, deterministic points, but choose their positions to match moments up to a much higher order. The points lie on symmetric orbits: the center, the principal axes, the diagonals and "conjugate" axes such as \((\pm a,\pm b)\) and \((\pm b,\pm a)\). The radii and weights are solved from the moment equations. The 2D CUT-8 rule used here has 21 points:</p>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Orbit</th><th>Points</th><th>Coordinates</th><th>Radius</th><th>Weight each</th></tr>
+<tr><td>center</td><td class="num">1</td><td>(0, 0)</td><td class="num">0</td><td class="num">0.2057</td></tr>
+<tr><td>diagonal 1</td><td class="num">4</td><td>(±0.849, ±0.849)</td><td class="num">1.20</td><td class="num">0.1405</td></tr>
+<tr><td>principal axes</td><td class="num">4</td><td>(±2.068, 0), (0, ±2.068)</td><td class="num">2.07</td><td class="num">0.0438</td></tr>
+<tr><td>diagonal 2</td><td class="num">4</td><td>(±1.862, ±1.862)</td><td class="num">2.63</td><td class="num">0.0124</td></tr>
+<tr><td>conjugate</td><td class="num">8</td><td>(±1.139, ±3.416), (±3.416, ±1.139)</td><td class="num">3.60</td><td class="num">0.0009</td></tr>
+</table></div>
+<p>The weights sum to 1. Symmetry makes every odd moment vanish automatically, so only even moments need matching. Figure 3 checks both rules against the exact Gaussian moments \(\mathbb E[x^i]\,\mathbb E[y^j]\), with \(\mathbb E[x^{2k}]=(2k-1)!!\).</p>
+<figure style="margin:1.5em 0"><img src="IMG/fig_moments.png" alt="Heat maps of the relative error of each moment E[x^i y^j] for Gauss-Hermite 5x5 and CUT-8." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 3. Relative error of every moment \(\mathbb E[x^iy^j]\), \(i,j\le 12\). Light = exact to machine precision. Gauss–Hermite is exact on the square \(i,j\le 9\) (blue dashed). CUT-8 is exact on the triangle \(i+j\le 9\) (cyan), with 4 fewer points.</figcaption></figure>
+<p>That difference in shape matters here. The polynomial basis \(\{x^ay^b: a+b\le N_m\}\) is a <i>total-degree</i> triangle, and CUT is designed for exactly that triangle. A tensor grid spends points on moments like \(x^9y^9\) (total degree 18) that a total-degree basis never uses. This is the usual efficiency argument for CUT and sparse rules. But it is not the main reason for the result below. §5 has the main reason.</p>
+
+<h3 id="scaling">2.4 Scaling into the fitting box</h3>
+<p>The MATLAB code works on a box of half-width 1 and scales each point set so its largest coordinate is 0.85. A shared scaling like that is not neutral. CUT-8's outermost points are at 3.4σ in one coordinate, so the rest of the set is pulled inward much more than Gauss–Hermite's (whose largest node is 2.86).</p>
+<figure style="margin:1.5em 0"><img src="IMG/fig_points_scaled.png" alt="The three point sets after scaling to max coordinate 0.85, shown over the test density." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 4. The fitting points after scaling, over the test density (★ = its peak at (0, −0.35)). CUT-8 has 5 points within r &lt; 0.3 of the origin. Each grid has 1.</figcaption></figure>
+<p>CUT-8 therefore samples the high-curvature middle of the box more densely. The grids still have a point closer to the peak itself (0.05 and 0.08 away, against 0.17 for CUT-8), so "CUT has a point on the peak" is not the explanation either.</p>
+
+<h2 id="lp">3 · The optimization: one linear program</h2>
+<h3 id="lp-problem">3.1 The problem</h3>
+<p>Sort the samples by value and split them by a log cutoff \(c=-9\). Points with \(b_j\ge c\) are fitted with slack. Points with \(b_j&lt;c\) only have to stay low. Guard points \(\mathbf g_l\) outside \([-1.5,1.5]^2\) keep \(p\) below a Gaussian so that \(\exp(p)\) cannot blow up away from the data:</p>
+$$ \begin{aligned}
+\min_{\boldsymbol\lambda,\,\mathbf t}\quad & \frac{C}{n}\,\|\boldsymbol\lambda\|_1 \;+\; 10\cdot\operatorname{norm\_largest}(\mathbf t,\,k) \\
+\text{s.t.}\quad & A_{\text{eq}}\boldsymbol\lambda = \mathbf b_{\text{eq}}+\mathbf t \\
+& A_{\text{ineq}}\boldsymbol\lambda \le c\,\mathbf 1 \\
+& A_{\text{out}}\boldsymbol\lambda \le \log\mathcal N(\mathbf g_l;0,I)
+\end{aligned}
+\qquad k=\lfloor 0.75\,n\rfloor . $$
+<p>\(\operatorname{norm\_largest}(\mathbf t,k)\) is the sum of the \(k\) largest \(|t_j|\). It sits between the \(\ell_\infty\) norm (\(k=1\)) and the \(\ell_1\) norm (\(k=N\)). The first term pushes coefficients to zero, so it acts as a sparsity prior on the polynomial.</p>
+
+<h3 id="lp-form">3.2 Writing it as an LP</h3>
+<p>Both norms are piecewise linear, so the whole problem is an LP. Split \(|\lambda_i|\le s_i\). For the k-largest sum, use the dual form \(\operatorname{norm\_largest}(\mathbf t,k)=\min_{\sigma,\mathbf u}\{k\sigma+\sum_j u_j : u_j\ge |t_j|-\sigma,\ u_j\ge 0\}\). The variables are \(\mathbf z=[\boldsymbol\lambda,\mathbf s,\mathbf t,\mathbf u,\sigma]\):</p>
+$$ \min\ \frac{C}{n}\mathbf 1^\top\mathbf s+10\big(k\sigma+\mathbf 1^\top\mathbf u\big)
+\quad\text{s.t.}\quad
+\pm\boldsymbol\lambda-\mathbf s\le 0,\quad \pm\mathbf t-\mathbf u-\sigma\mathbf 1\le 0,\quad
+A_{\text{eq}}\boldsymbol\lambda-\mathbf t=\mathbf b_{\text{eq}},\quad \mathbf s,\mathbf u,\sigma\ge0 $$
+<p>plus the two inequality blocks on \(\boldsymbol\lambda\). For CUT-8 at degree 6 that is 99 variables, 21 equalities and about 400 inequalities (most of them guard points). HiGHS solves it in milliseconds.</p>
+<pre class="wp-block-code"><code class="language-python"># z = [lam (n), s (n), t (m), u (m), sigma (1)]
+c = np.zeros(2*n + 2*m + 1)
+c[n:2*n] = C / n                 # C/n * sum(s)      -> L1 on lambda
+c[2*n+m:2*n+2*m] = 10.0          # 10 * sum(u)
+c[-1] = 10.0 * k                 # 10 * k * sigma    -> norm_largest(t, k)
+A_ub = vstack([[ I_n, -I_n, 0, 0, 0],          #  lam - s <= 0
+               [-I_n, -I_n, 0, 0, 0],          # -lam - s <= 0
+               [0, 0,  I_m, -I_m, -1],         #  t - u - sigma <= 0
+               [0, 0, -I_m, -I_m, -1],         # -t - u - sigma <= 0
+               [A_ineq, 0, 0, 0, 0],           #  p(x) <= cutoff
+               [A_out,  0, 0, 0, 0]])          #  p(g) <= log N(g; 0, I)
+A_eq = hstack([A_eq_pts, 0, -I_m, 0, 0])       #  A lam - t = log f
+res = linprog(c, A_ub, b_ub, A_eq, b_eq, bounds=bounds, method="highs")</code></pre>
+
+<figure style="margin:1.5em 0"><img src="IMG/fig_constraints_logspace.png" alt="Left: the roles of sample and guard points on the log density. Right: a slice at x = 0 comparing true log f with each fitted polynomial and the guard bound." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 5. What the LP sees. Left: CUT-8 samples (all above the −9 cutoff, so all are equalities) and guard points outside the ±1.5 box. Right: the slice \(x=0\) in log space. The grid fits peak about 1 log unit too low and swing up between 1 and 1.5, where nothing constrains them. Every fit drops off a cliff past the sampled region; the guards only cap \(p\) from above.</figcaption></figure>
+
+<h3 id="cpath">3.3 Choosing C</h3>
+<p>C trades sparsity against fit. The MATLAB code sweeps \(C\in\{0.01,0.1,25,\dots,10^4\}\) and stops at the first C where the residual at the highest sample exceeds 0.01 % of its value, keeping the previous solution. If even the smallest C violates that tolerance, it keeps the first solution.</p>
+<figure style="margin:1.5em 0"><img src="IMG/fig_cpath.png" alt="Regularization path: error, number of nonzero coefficients and peak residual versus C for the three point sets." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 6. The regularization path at degree 6. Left: error vs C (★ = C picked by the stopping rule). Middle: number of nonzero coefficients. Right: residual at the peak sample. The grids are never below the 0.01 % tolerance, even at C = 0.01. That is the first sign that something structural is wrong (§5).</figcaption></figure>
+<p>For CUT-8 the peak residual is \(10^{-6}\) % up to C = 0.1 and then jumps, so the rule picks C = 0.1 with 15 of 28 coefficients nonzero. For both grids the peak residual is about 100 % for every C. The rule never fires and falls back to C = 0.01.</p>
+
+<h2 id="results">4 · Results</h2>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Point set</th><th>Points</th><th>C chosen</th><th>Nonzero λ</th><th>Rel. RMSE inside sampled region</th></tr>
+<tr><td>Uniform 5×5</td><td class="num">25</td><td class="num">0.01</td><td class="num">14 / 28</td><td class="num">14.9 %</td></tr>
+<tr><td>Gauss–Hermite 5×5</td><td class="num">25</td><td class="num">0.01</td><td class="num">14 / 28</td><td class="num">13.9 %</td></tr>
+<tr><td><b>CUT-8</b></td><td class="num">21</td><td class="num">0.1</td><td class="num">15 / 28</td><td class="num"><b>4.1 %</b></td></tr>
+</table></div>
+<p>The error is \(\|\hat f-f\|_2/\max f\) on a 161 × 161 grid restricted to the box \(|x|,|y|\le 0.85\) that the samples span.</p>
+
+<figure style="margin:1.5em 0"><video src="IMG/rotating_surfaces.mp4" poster="IMG/surfaces_3d.png" autoplay loop muted playsinline controls style="width:100%;height:auto"></video><figcaption style="font-size:0.9em;color:#6b7280">Figure 7. Truth and the three fits, rotating together on the same vertical scale. Red dots are the samples at their true height. Wherever a dot floats above the surface, the fit missed that sample. Both grids miss their peak sample by a factor of about 3.</figcaption></figure>
+
+<figure style="margin:1.5em 0"><img src="IMG/contours_overlay.png" alt="Fitted contour lines over the true contour lines for each point set." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 8. Fitted contours (solid) over the true contours (dashed), at the same levels. The grid fits lose the inner contours entirely: their maximum is below the fourth level. CUT-8 reproduces the peak and the shoulders and starts to drift only along the thin arms.</figcaption></figure>
+
+<figure style="margin:1.5em 0"><video src="IMG/rotating_errors.mp4" autoplay loop muted playsinline controls style="width:100%;height:auto"></video><figcaption style="font-size:0.9em;color:#6b7280">Figure 9. Error surfaces \(\hat f-f\) on one shared scale. The grids' error is one deep hole at the peak with ridges on either side. CUT-8's error is small and spread along the banana's arms.</figcaption></figure>
+
+<h2 id="why">5 · Why: tensor grids cannot see six polynomials</h2>
+<p>A 5-node grid has only five distinct values per axis. The degree-5 node polynomial</p>
+$$ \omega(x)=\prod_{k=1}^{5}(x-x_k)=x\,(x^2-a^2)(x^2-b^2) $$
+<p>is zero at every grid node, and so is anything it multiplies. Within total degree 6 that gives six independent polynomials:</p>
+$$ \mathcal N=\operatorname{span}\{\ \omega(x),\ x\,\omega(x),\ y\,\omega(x),\ \omega(y),\ y\,\omega(y),\ x\,\omega(y)\ \},\qquad A\,\boldsymbol\lambda_{\mathcal N}=\mathbf 0 . $$
+<figure style="margin:1.5em 0"><img src="IMG/fig_nullspace.png" alt="Three null-space polynomials of the Gauss-Hermite grid, each zero at all 25 nodes." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 10. Three of the six polynomials that vanish at all 25 Gauss–Hermite nodes (black lines are their zero sets). Any multiple of them can be added to a fit without changing a single residual. The same happens on the uniform grid.</figcaption></figure>
+<p>So the 25 × 28 design matrix has rank \(28-6=22\), not 25. That has two consequences.</p>
+<ol>
+<li><b>The grid can't interpolate.</b> Only 22 of the 25 equations are independent. Unless the data happen to lie in the range of \(A\), no degree-6 polynomial passes through all 25 samples. For the test surface, the best least-squares fit still has residuals up to 0.41 in log units.</li>
+<li><b>The L1-type residual concentrates the misfit.</b> \(\operatorname{norm\_largest}\) with \(k=21\) is close to an \(\ell_1\) norm on the residuals, and \(\ell_1\) solutions are sparse. The LP satisfies 23 of the 25 equations exactly and puts nearly all of the misfit on one sample: the peak.</li>
+</ol>
+<figure style="margin:1.5em 0"><img src="IMG/fig_residuals.png" alt="Bar charts of residuals at each sample for the L1 LP and for least squares, for each point set." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 11. Residual \(p(\mathbf x_j)-\log f(\mathbf x_j)\) at each sample, sorted by true value (0 = peak). L1 LP (colored) vs least squares (gray). On both grids the L1 fit puts −1.23 and −1.07 log units on the peak (the fitted peak is \(e^{-1.23}\approx 29\,\%\) of the true one). CUT-8 has full rank and interpolates every sample. Its only nonzero residual (0.25, at the sixth-highest sample) is a choice made by the sparsity term, not forced by the geometry.</figcaption></figure>
+<p>CUT-8 doesn't have this problem. Its points are not a product of 1D sets, and its 21 × 28 design matrix has full row rank (21), so the equality constraints can always be met exactly. The singular values make the difference stark:</p>
+<figure style="margin:1.5em 0"><img src="IMG/fig_svd.png" alt="Singular values of the degree-6 design matrix for the three point sets." style="width:70%;height:auto;display:block;margin:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 12. Singular values of the degree-6 design matrix. Both grids have three singular values at round-off level (condition number about \(10^{17}\)). CUT-8's condition number is 660.</figcaption></figure>
+<div class="callout warn"><b>This is a degree threshold, not a gradual effect.</b> \(\omega\) has degree 5, so with \(N_m\le4\) the grids have no null space and behave well. For \(N_m\ge 5\), with a \(q\)-node tensor grid that becomes \(N_m\ge q\), they become rank deficient. The Gaussian banana shows it cleanly: its log is exactly degree 4, and all three point sets recover it exactly at degree 4 or 5. At degree 6, CUT-8 still recovers it exactly, while both grids have 6–7 % error on a surface the basis can represent perfectly.</div>
+
+<h3 id="ls">5.1 Is the L1 LP the right tool?</h3>
+<p>The diagnosis suggests a check: replace the LP with plain minimum-norm least squares on the same points and basis, with no constraints at all.</p>
+<figure style="margin:1.5em 0"><img src="IMG/fig_l1_vs_ls.png" alt="Bar chart comparing L1 LP and least squares errors for each point set." style="width:70%;height:auto;display:block;margin:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 13. Same points, same degree-6 basis. Least squares spreads the misfit of a rank-deficient grid over all samples instead of dumping it on the peak, which halves the grids' error. On CUT-8 the L1 LP is still the best of the six fits.</figcaption></figure>
+<p>On the grids, least squares halves the error (6.9 % and 6.5 %), because spreading an unavoidable misfit is better than concentrating it at the peak. On CUT-8, where there is no unavoidable misfit, the L1 LP wins (4.1 % vs 4.9 %): its sparsity prior picks a better interpolant from the 7-dimensional family that fits all 21 samples, and its constraints keep the tails sensible. So the L1 LP and CUT points work well together, and the L1 LP and a tensor grid at \(N_m\ge q\) do not.</p>
+
+<h2 id="degree">6 · How much degree?</h2>
+<figure style="margin:1.5em 0"><img src="IMG/fig_degree.png" alt="Error versus polynomial degree for the three point sets." style="width:75%;height:auto;display:block;margin:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 14. Error vs degree (number of coefficients in brackets). Shaded: degree 6, used above.</figcaption></figure>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Degree</th><th class="num">2</th><th class="num">3</th><th class="num">4</th><th class="num">5</th><th class="num">6</th><th class="num">7</th><th class="num">8</th><th class="num">9</th><th class="num">10</th></tr>
+<tr><td>Coefficients</td><td class="num">6</td><td class="num">10</td><td class="num">15</td><td class="num">21</td><td class="num">28</td><td class="num">36</td><td class="num">45</td><td class="num">55</td><td class="num">66</td></tr>
+<tr><td>Uniform 5×5</td><td class="num">22.9</td><td class="num">15.5</td><td class="num">10.4</td><td class="num">14.2</td><td class="num">14.9</td><td class="num">10.2</td><td class="num">7.8</td><td class="num">8.3</td><td class="num">8.1</td></tr>
+<tr><td>Gauss–Hermite 5×5</td><td class="num">22.9</td><td class="num">16.0</td><td class="num">9.7</td><td class="num">12.7</td><td class="num">13.9</td><td class="num">8.5</td><td class="num">7.9</td><td class="num">8.5</td><td class="num">7.5</td></tr>
+<tr><td>CUT-8</td><td class="num">19.5</td><td class="num">13.6</td><td class="num">8.0</td><td class="num">8.3</td><td class="num"><b>4.1</b></td><td class="num">3.9</td><td class="num">4.7</td><td class="num">4.8</td><td class="num">4.0</td></tr>
+</table></div>
+<p>The grids get worse from degree 4 to 6, exactly where the null space appears. CUT-8 improves steadily to degree 6 and then levels off at about 4 %. Beyond 21 coefficients, extra degree can only add directions the data don't constrain. Even at each method's best degree, CUT-8 is about 2× better (3.9 % against 7.5–7.8 %).</p>
+<figure style="margin:1.5em 0"><img src="IMG/fig_coeffs.png" alt="Bar chart of the 28 fitted coefficients for each point set on a symmetric log scale." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 15. The fitted coefficients for the 28 monomials at degree 6. Coefficient size is not a measure of fit quality here: any null-space combination can be added to a grid fit for free.</figcaption></figure>
+
+<h2 id="limits">7 · Where the comparison is fair, and where it isn't</h2>
+<ul>
+<li><b>The surface was chosen to show the effect.</b> It is unimodal with a sharp, curved peak, which is the regime where the null-space failure hurts most. On a three-component Gaussian mixture with separate peaks, all three sets fail at 21–25 points (12–14 % at their best degree, CUT-8 slightly ahead). On very smooth, nearly Gaussian surfaces, the 25-point grids pull slightly ahead of CUT-8 at higher degree, simply because they have more points.</li>
+<li><b>The scaling convention matters.</b> Scaling every set to the same box (§2.4) concentrates CUT-8 toward the center. The original code also transforms points to the density's estimated mean and covariance before fitting. This port leaves that step out so the three sets can be compared on equal terms.</li>
+<li><b>The grid failure is avoidable.</b> Keep \(N_m&lt;q\) for a \(q\)-node tensor grid, use least squares instead of an L1 residual, or use a non-tensor design such as a Smolyak sparse grid or CUT. The lesson is about pairing: an \(\ell_1\)-type residual assumes the system can be solved exactly, and a tensor grid quietly breaks that assumption once the degree reaches the number of nodes per axis.</li>
+<li><b>Exactness is not the mechanism.</b> Both rules integrate every monomial of the degree-6 basis exactly against a Gaussian. The fit, however, is an interpolation problem, and the property that matters is that the basis is unisolvent on the points. CUT-8 has it; tensor grids lose it at \(N_m\ge q\).</li>
+</ul>
+
+<h2 id="reproduce">8 · Reproducing it</h2>
+<pre class="wp-block-code"><code>pip install numpy scipy matplotlib pillow
+python compare.py                     # fits + contours + rotating 3D animations  -&gt; outputs/
+python blog_figures.py                # every analysis figure on this page        -&gt; outputs/blog/
+python compare.py --surface mixture --degree 5</code></pre>
+<p>The point sets ship as <code>points.pkl</code> (nodes, weights and the scaled nodes for each set). <code>make_points.py</code> regenerates them, with CUT-8 read from the <code>.mat</code> tables in <a href="https://github.com/nadurthi/CUTpoints">nadurthi/CUTpoints</a>, which also has CUT-4 and CUT-6 and higher-dimensional rules.</p>
+
+<h2 id="refs">9 · References</h2>
+<ul>
+<li>N. Adurthi, P. Singla, T. Singh. Conjugate Unscented Transformation: Applications to Estimation and Control. <i>ASME J. Dynamic Systems, Measurement, and Control</i>, 2018.</li>
+<li>CUT point tables: <a href="https://github.com/nadurthi/CUTpoints">github.com/nadurthi/CUTpoints</a>. Original MATLAB fit: <a href="https://github.com/nadurthi/moc2">github.com/nadurthi/moc2</a>, <code>contourbasedfiltering/</code>.</li>
+<li>G. H. Golub, J. H. Welsch. Calculation of Gauss quadrature rules. <i>Math. Comp.</i> 23, 1969.</li>
+<li>S. Boyd, L. Vandenberghe. <i>Convex Optimization</i>, §6.1 (penalty functions) and the sum-of-k-largest formulation used by CVX's <code>norm_largest</code>.</li>
+<li>Q. Huangfu, J. A. J. Hall. Parallelizing the dual revised simplex method (HiGHS). <i>Math. Prog. Comp.</i> 10, 2018.</li>
+</ul>
+<p class="footnote">Related: <a href="/tutorials/misc/lincov/">Linear covariance analysis</a> · <a href="/tutorials/gnc/filtering/">Filtering</a> · <a href="/tutorials/misc/">back to Techniques</a>.</p>
+
+</div></div>
