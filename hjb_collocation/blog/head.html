@@ -1,0 +1,14 @@
+<div id="nav"></div><div class="page"><nav class="toc" id="toc"></nav><div class="content">
+
+<h1>Sparse collocation for the Hamilton–Jacobi–Bellman equation</h1>
+<p class="lead">An optimal feedback law for a nonlinear system is the gradient of a value function \(V(\mathbf x)\) that solves the Hamilton–Jacobi–Bellman PDE over the whole state space. That PDE hits the curse of dimensionality twice: in the number of points needed to discretize it, and in the number of basis functions needed to represent \(V\). In 2015–16 we attacked both at once (Adurthi, Singla &amp; Majji, <i>JGCD</i> 2017). <b>CUT points</b> keep the collocation grid small, an <b>iterative ℓ1 program</b> picks a sparse polynomial basis out of an over-complete dictionary, and <b>policy iteration</b> turns the nonlinear PDE into a sequence of linear ones. This page derives the method, then reruns every example in Python, checked against the original MATLAB code and against the true optimum from Pontryagin's principle.</p>
+
+<p class="footnote">Code (Python, verified against the archived MATLAB runs), the CUT point tables and every figure: CODE_LINK. Paper: N. Adurthi, P. Singla, M. Majji, "Sparse Approximation-Based Collocation Scheme for Nonlinear Optimal Feedback Control Design," <i>J. Guidance, Control, and Dynamics</i> 40(2), 248–264, 2017, <a href="https://doi.org/10.2514/1.G001755">doi:10.2514/1.G001755</a>. Related: <a href="/tutorials/misc/l1-polyfit-cut-points/">fitting a density from 21 points with CUT and an L1 LP</a>.</p>
+
+<div class="callout key"><b>What the rerun found.</b>
+<ul>
+<li><b>Spin stabilization reproduces exactly.</b> From 84 candidate monomials, the ℓ1 selection keeps exactly the three terms of the analytic solution \(V=\sqrt{qr}\sum I_i\omega_i^2\), with coefficients correct to 10⁻¹⁴.</li>
+<li><b>The interpolation benchmark reproduces</b> on the polynomial test (the least-degree error matches the paper's 106.1224 exactly). On the non-polynomial test the ranking holds, but the RMSE values come out larger than the published ones.</li>
+<li><b>Van der Pol does not reproduce.</b> The published value function is a good controller (13 % above the true optimum at the median), but it doesn't satisfy the collocation equations as described. Rerunning the described setup gives a different 14-term \(V\) whose policy is barely better than the initial one. The cause is structural: symmetric points and odd dynamics leave only 14 independent equations, and which single monomial ℓ1 drops swings the result from 1.2× optimal to unstable.</li>
+<li><b>6-D attitude regulation:</b> ATT_SUMMARY</li>
+</ul></div>
