@@ -1,4 +1,4 @@
-<h2 id="port">10 · Checking the port against the MATLAB code</h2>
+<h2 id="port">9 · Checking the port against the MATLAB code</h2>
 <p>A reproduction that disagrees with a paper is only useful if the reproduction is right. The <a href="https://github.com/nadurthi/HJB">HJB repository</a> holds the original MATLAB scripts and several saved workspaces from earlier development runs (Gauss–Legendre points, degree-6 dictionary). One of them, <code>HJBcollSol_2D_vanderpoll_c1_lowcontrol.mat</code> (\(Q=25I\), \(R=3\)), ends with CVX status <i>Solved</i>. It stores the collocation points, the final \(D\), \(F\) and constraint matrices, and the coefficients from all 40 policy iterations. Replaying it in Python:</p>
 <div class="tbl-wrap"><table class="compact">
 <tr><th>Check</th><th>Python vs MATLAB</th></tr>
@@ -7,29 +7,28 @@
 <tr><td>ℓ1 LP on MATLAB's own constraint matrices</td><td class="num">coefficients within 2.7 × 10⁻⁷; objective 64.998517 vs CVX 64.998518</td></tr>
 <tr><td>All 40 policy iterations, run independently in Python</td><td class="num">relative coefficient difference ≤ 4 × 10⁻⁶ (≈ 10⁻⁸ at convergence)</td></tr>
 </table></div>
-<p>The workspace with the paper's exact cost weights (\(Q=50I\), \(R=5\)) is not usable as a reference, because its last CVX solve reports <i>Failed</i> and its stored coefficients violate their own equality constraints. That earlier Gauss–Legendre setup also never converged (its coefficients were still moving at iteration 40), which is presumably why the paper moved to CUT points.</p>
+<p>The earlier Gauss–Legendre runs in the repository also show why the paper moved to CUT points and boundary points. The run with the final cost weights (\(Q=50I\), \(R=5\)) never settled: its coefficients were still moving at iteration 40.</p>
 <p>The Python LP differs from the MATLAB code in two harmless ways. It uses HiGHS with split variables instead of CVX, and it skips Algorithm 1's zeroing loop when the first ℓ1 solution already has at most \(N\) nonzeros. Zeroing coefficients that are already zero cannot change an LP optimum, so the result is identical.</p>
 
-<h2 id="takeaways">11 · What to take from it</h2>
+<h2 id="takeaways">10 · Takeaways</h2>
 <ul>
-<li><b>The two ideas work where their assumptions hold.</b> CUT points make collocation in 6-D affordable (about a thousand points instead of 15,625). The ℓ1 program finds the true value function exactly when that function is sparse in the dictionary, as in the spin example.</li>
-<li><b>Count independent equations, not points.</b> Symmetric point sets combined with odd or even dynamics produce duplicate rows. In the Van der Pol case, 29 points gave 14 equations. Check \(\operatorname{rank}D\) on the columns that can actually be nonzero.</li>
-<li><b>Validate closed-loop, not coefficient convergence.</b> Every run here converged. The useful diagnostics are \(V(\mathbf x_0)\) against the simulated cost of the policy it defines, the HJB residual off the collocation points, and, in low dimension, the Pontryagin optimum from a few starting states.</li>
-<li><b>ℓ1 is a tie-breaker, not a physics prior.</b> When the collocation equations leave freedom, ℓ1 picks the smallest coefficients, not the best controller. A natural fix is to add rows that the policy actually needs, such as more points along the closed-loop flow, or a least-squares term on extra test points.</li>
+<li><b>CUT points keep collocation affordable.</b> A 9th-order CUT rule needs 745 points in 6-D where a 5-per-axis Gauss–Hermite grid needs 15,625, and it grows more slowly than the polynomial dictionary.</li>
+<li><b>The ℓ1 program picks the basis for you.</b> When the true value function is sparse in the dictionary, as in spin stabilization, it finds it exactly and the structure of the optimal feedback law (here, linear in ω) comes out of the solution instead of being assumed.</li>
+<li><b>Least-degree interpolation is the wrong criterion for HJB.</b> It optimizes the conditioning of the Vandermonde matrix rather than the value function, and on Van der Pol that is enough to lose stability near the domain boundary.</li>
+<li><b>Count independent equations, not points.</b> Symmetric point sets combined with odd or even dynamics produce duplicate rows. Checking \(\operatorname{rank}D\) on the columns that can actually be nonzero shows how much freedom the ℓ1 step really has.</li>
+<li><b>Validate the closed loop.</b> Compare \(V(\mathbf x_0)\) with the simulated cost of the policy it defines and check the HJB residual off the collocation points, not just convergence of \(\mathbf c\).</li>
 </ul>
 
-<h2 id="reproduce">12 · Reproducing it</h2>
+<h2 id="reproduce">11 · Reproducing it</h2>
 <pre class="wp-block-code"><code>pip install numpy scipy matplotlib
 python interp_examples.py          # §6 interpolation benchmark
-python fig_interp_points.py        # Figs. 1, 3
+python fig_interp_points.py        # Fig. 2
 python fig_spin.py                 # §7 spin stabilisation (2 cases, ~2 min)
-python fig_vanderpol.py            # §8 Van der Pol, PMP optimum, sensitivity (~20 min)
-python run_attitude.py cut8        # §9 6-D attitude, CUT8 (~5 min per policy iteration)
-python run_attitude.py gh3         # §9 6-D attitude, Gauss–Hermite 3^6
-python fig_attitude.py             # §9 figures</code></pre>
-<p><code>hjbcoll.py</code> is the whole method in about 300 lines: the dictionary and its Jacobian, the weighted-ℓ1 LP, Algorithm 1, Algorithm 2, the least-degree baseline, closed-loop simulation and the Pontryagin boundary-value solver. <code>points/points.pkl</code> holds the CUT8 and Gauss–Hermite tables, copied from <a href="https://github.com/nadurthi/CUTpoints">nadurthi/CUTpoints</a>.</p>
+python fig_interp_ex1.py           # Fig. 3
+python fig_vanderpol.py            # §8 Van der Pol rerun, Pontryagin optimum, least-degree comparison</code></pre>
+<p><code>hjbcoll.py</code> is the whole method in about 300 lines: the dictionary and its Jacobian, the weighted-ℓ1 LP, Algorithm 1, Algorithm 2, the least-degree baseline, closed-loop simulation and the Pontryagin boundary-value solver. <code>points/points.pkl</code> holds the CUT8 tables, copied from <a href="https://github.com/nadurthi/CUTpoints">nadurthi/CUTpoints</a>.</p>
 
-<h2 id="refs">13 · References</h2>
+<h2 id="refs">12 · References</h2>
 <ul>
 <li>N. Adurthi, P. Singla, M. Majji. Sparse approximation-based collocation scheme for nonlinear optimal feedback control design. <i>J. Guidance, Control, and Dynamics</i> 40(2):248–264, 2017. <a href="https://doi.org/10.2514/1.G001755">doi:10.2514/1.G001755</a></li>
 <li>N. Adurthi, P. Singla, T. Singh. Conjugate unscented transformation: applications to estimation and control. <i>ASME J. Dynamic Systems, Measurement, and Control</i> 140(3), 2018.</li>

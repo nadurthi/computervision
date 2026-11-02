@@ -1,0 +1,202 @@
+<!-- wp:html -->
+<!-- gdl-static {"v": 1, "source": "algorithms/hjb-sparse-collocation.html", "page": "algorithms-hjb-sparse-collocation", "title": "Sparse collocation for the HJB equation", "description": "Solving the Hamilton–Jacobi–Bellman equation by policy iteration, CUT collocation points and iterative l1 basis selection: derivation and a verified Python rerun of Adurthi, Singla & Majji (JGCD 2017).", "root": "/tutorials/", "scripts": ["bootstrap", "nav"]} -->
+<div id="nav"></div><div class="page"><nav class="toc" id="toc"></nav><div class="content">
+
+<h1>Sparse collocation for the Hamilton–Jacobi–Bellman equation</h1>
+<p class="lead">An optimal feedback law for a nonlinear system is the gradient of a value function $V(\mathbf x)$ that solves the Hamilton–Jacobi–Bellman PDE over the whole state space. That PDE hits the curse of dimensionality twice: in the number of points needed to discretize it, and in the number of basis functions needed to represent $V$. In 2015–16 we attacked both at once (Adurthi, Singla &amp; Majji, <i>JGCD</i> 2017). <b>CUT points</b> keep the collocation grid small, an <b>iterative ℓ1 program</b> picks a sparse polynomial basis out of an over-complete dictionary, and <b>policy iteration</b> turns the nonlinear PDE into a sequence of linear ones. This page derives the method, then reruns every example in Python, checked against the original MATLAB code and against the true optimum from Pontryagin's principle.</p>
+
+<p class="footnote">Code (Python, verified against the archived MATLAB runs), the CUT point tables and every figure: <a href="https://github.com/nadurthi/computervision/tree/hjb-collocation/hjb_collocation">nadurthi/computervision · hjb_collocation/</a>. Paper: N. Adurthi, P. Singla, M. Majji, "Sparse Approximation-Based Collocation Scheme for Nonlinear Optimal Feedback Control Design," <i>J. Guidance, Control, and Dynamics</i> 40(2), 248–264, 2017, <a href="https://doi.org/10.2514/1.G001755">doi:10.2514/1.G001755</a>. Related: <a href="/tutorials/misc/l1-polyfit-cut-points/">fitting a density from 21 points with CUT and an L1 LP</a>.</p>
+
+<div class="callout key"><b>What the rerun found.</b>
+<ul>
+<li><b>Spin stabilization reproduces exactly.</b> From 84 candidate monomials, the ℓ1 selection keeps exactly the three terms of the analytic solution $V=\sqrt{qr}\sum I_i\omega_i^2$, with coefficients correct to 10⁻¹⁴.</li>
+<li><b>The interpolation benchmark reproduces</b> on the polynomial test (the least-degree error matches the paper's 106.1224 exactly). On the non-polynomial test the ranking holds, but the RMSE values come out larger than the published ones.</li>
+<li><b>Van der Pol does not reproduce.</b> The published value function is a good controller (13 % above the true optimum at the median), but it doesn't satisfy the collocation equations as described. Rerunning the described setup gives a different 14-term $V$ whose policy is barely better than the initial one. The cause is structural: symmetric points and odd dynamics leave only 14 independent equations, and which single monomial ℓ1 drops swings the result from 1.2× optimal to unstable.</li>
+<li><b>6-D attitude regulation:</b> results pending (rerun in progress).</li>
+</ul></div>
+
+<h2 id="problem">1 · The problem: infinite-horizon optimal feedback</h2>
+<p>For a control-affine system we want a feedback law $\mathbf u=\mathbf k(\mathbf x)$, not an open-loop trajectory:</p>
+$$ \min_{\mathbf u(\cdot)}\; V(\mathbf x_0)=\int_{0}^{\infty}\Big(l(\mathbf x)+\mathbf u^\top R\,\mathbf u\Big)\,dt
+\qquad\text{s.t.}\qquad \dot{\mathbf x}=\mathbf f(\mathbf x)+\mathbf g(\mathbf x)\,\mathbf u,\quad \mathbf x_0\in\Omega , $$
+<p>with $\mathbf f(\mathbf 0)=\mathbf 0$, $l$ positive definite and $R\succ0$. Minimizing the Hamiltonian $H=l+\mathbf u^\top R\mathbf u+V_{\mathbf x}^\top(\mathbf f+\mathbf g\mathbf u)$ over $\mathbf u$ gives the control in terms of the value-function gradient,</p>
+$$ \mathbf u^*(\mathbf x)=-\tfrac12 R^{-1}\mathbf g(\mathbf x)^\top \frac{\partial V}{\partial \mathbf x}, $$
+<p>and substituting back gives the stationary Hamilton–Jacobi–Bellman equation, with $V(\mathbf 0)=0$:</p>
+$$ l(\mathbf x)+\frac{\partial V}{\partial \mathbf x}^{\!\top}\mathbf f(\mathbf x)-\frac14\,\frac{\partial V}{\partial \mathbf x}^{\!\top}\mathbf g(\mathbf x)R^{-1}\mathbf g(\mathbf x)^\top\frac{\partial V}{\partial \mathbf x}=0 . $$
+<p>Solve this PDE over $\Omega$ and you have the optimal controller for every initial state at once. For a linear system with $l=\mathbf x^\top Q\mathbf x$ it collapses to the algebraic Riccati equation and $V=\mathbf x^\top P\mathbf x$. For anything nonlinear, two things make it hard: it is quadratic in $V_{\mathbf x}$, and it lives in the full state space.</p>
+
+<h2 id="pi">2 · Policy iteration: one linear PDE at a time</h2>
+<p>Kleinman showed that the Riccati equation can be solved as a sequence of Lyapunov equations. Saridis and Lee, and later Beard, Saridis and Wen, extended the idea to the nonlinear HJB. Fix a stabilizing (admissible) policy $\mathbf u_{(k)}$. Its cost-to-go satisfies the <b>generalized HJB</b> (GHJB), which is <i>linear</i> in $V$:</p>
+$$ \textit{Step 1:}\quad \frac{\partial V^{(k)}}{\partial\mathbf x}^{\!\top}\Big[\mathbf f(\mathbf x)+\mathbf g(\mathbf x)\mathbf u_{(k)}(\mathbf x)\Big]+l(\mathbf x)+\mathbf u_{(k)}^\top R\,\mathbf u_{(k)}=0 $$
+$$ \textit{Step 2:}\quad \mathbf u_{(k+1)}(\mathbf x)=-\tfrac12R^{-1}\mathbf g(\mathbf x)^\top\frac{\partial V^{(k)}}{\partial\mathbf x} $$
+<p>If each GHJB is solved exactly, every new policy is admissible and no worse than the last, and $V^{(k)}$ decreases monotonically to the HJB solution. That guarantee is about the <i>exact</i> GHJB. Once the GHJB is solved approximately, as any numerical method must, the guarantee is only as good as the approximation, and §8 shows what that means in practice.</p>
+
+<h2 id="wr">3 · Weighted residuals: Galerkin, least squares, collocation</h2>
+<p>Write the value function as a linear combination of basis functions with $\phi_i(\mathbf 0)=0$:</p>
+$$ V(\mathbf x)=\sum_{i=1}^{m}c_i\,\phi_i(\mathbf x)=\mathbf c^\top\boldsymbol\phi(\mathbf x),\qquad \frac{\partial V}{\partial\mathbf x}^{\!\top}=\mathbf c^\top J(\mathbf x),\quad J_{ij}=\frac{\partial\phi_i}{\partial x_j}. $$
+<p>The GHJB residual is then linear in $\mathbf c$:</p>
+$$ e(\mathbf x)=\mathbf c^\top J(\mathbf x)\big[\mathbf f+\mathbf g\mathbf u_{(k)}\big]+l(\mathbf x)+\mathbf u_{(k)}^\top R\,\mathbf u_{(k)} . $$
+<p>The method of weighted residuals sets $\int_\Omega\Psi_j(\mathbf x)\,e(\mathbf x)\,d\mathbf x=0$ for $m$ test functions $\Psi_j$:</p>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Method</th><th>Test function $\Psi_j$</th><th>Cost per GHJB</th></tr>
+<tr><td>Galerkin (Beard et al.)</td><td>$\phi_j$</td><td>$O(m^2)$ integrals over $\Omega\subset\mathbb R^n$</td></tr>
+<tr><td>Least squares</td><td>$\partial e/\partial c_j$</td><td>$O(m^2)$ integrals over $\Omega$</td></tr>
+<tr><td><b>Collocation</b></td><td>$\delta(\mathbf x-\mathbf x_j)$</td><td>no integrals: $e(\mathbf x_j)=0$ at $N$ points</td></tr>
+</table></div>
+<p>Collocation turns the GHJB into a linear system $D\mathbf c=F$, one row per point:</p>
+$$ \mathbf d_i^\top=\Big(J(\mathbf x_i)\big[\mathbf f(\mathbf x_i)+\mathbf g(\mathbf x_i)\mathbf u_{(k)}(\mathbf x_i)\big]\Big)^\top,\qquad F_i=-l(\mathbf x_i)-\mathbf u_{(k)}(\mathbf x_i)^\top R\,\mathbf u_{(k)}(\mathbf x_i). $$
+<p>That leaves two design choices, and the paper's contribution is one answer to each: <b>where</b> to put the $N$ points (§4), and <b>which</b> $m$ basis functions to use (§5).</p>
+
+<h2 id="cut">4 · Collocation points: the Conjugate Unscented Transformation</h2>
+<p>Gaussian quadrature is the natural choice in 1-D, but its $n$-D version is a tensor product: 5 points per axis in 6-D is $5^6=15{,}625$ points. Sparse (Smolyak) grids cut that down but bring negative weights. The <b>Conjugate Unscented Transformation</b> (CUT) builds symmetric point sets directly in $\mathbb R^n$, placed on three families of axes:</p>
+<ul>
+<li><b>principal axes</b> $\sigma_i=\pm\mathbf e_k$: $2n$ points;</li>
+<li><b>$p$-th conjugate axes</b> $c^p$: every sign and combination of $p$ principal axes, $2^p\binom np$ points, e.g. $(\pm1,\pm1,0,\dots)$;</li>
+<li><b>scaled conjugate axes</b> $s^p(h)$: the same, with one coordinate scaled by $h$, $n2^p\binom np$ points, e.g. $(\pm h,\pm1,0,\dots)$.</li>
+</ul>
+<p>Each family gets one radius $r$ and one weight $w$. Symmetry makes every odd moment vanish automatically, so only the even moment equations are solved for the $(r,w)$ pairs. For example, CUT6 (exact to 7th order, $n\le6$) uses the principal axes, the $n$-th conjugate axes and the 2nd conjugate axes, for $N=2n^2+2^n+1$ points, with</p>
+$$ w_1=\frac{8-n}{r_1^6},\qquad w_2=\frac{1}{2^nr_2^6},\qquad w_3=\frac{1}{2r_3^6}, $$
+<p>and $a_i=1/r_i^2$ solving three small polynomial equations.</p>
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-paper-fig1-cut-axes.png" alt="Principal, conjugate and scaled conjugate axes in 2-D and 3-D (Fig. 1 of the paper)." style="width:80%;height:auto;display:block;margin:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 1. CUT point families: principal axes σ, conjugate axes c², c³ and scaled conjugate axes s², s³, in 2-D and in one octant of 3-D (Fig. 1 of the paper).</figcaption></figure>
+<p>The CUT8 rules used here are exact for all moments up to 9th order:</p>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Dimension</th><th class="num">2</th><th class="num">3</th><th class="num">4</th><th class="num">5</th><th class="num">6</th></tr>
+<tr><td>CUT8 points</td><td class="num">21</td><td class="num">59</td><td class="num">161</td><td class="num">355</td><td class="num">745</td></tr>
+<tr><td>Gauss–Hermite, 5 per axis (same order)</td><td class="num">25</td><td class="num">125</td><td class="num">625</td><td class="num">3,125</td><td class="num">15,625</td></tr>
+<tr><td>Monomials of degree ≤ 8</td><td class="num">45</td><td class="num">165</td><td class="num">495</td><td class="num">1,287</td><td class="num">3,003</td></tr>
+</table></div>
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-points.png" alt="The 29-point Van der Pol collocation set, the 59 CUT8 points in 3-D, and point counts versus dimension." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 2. Left: the Van der Pol collocation set, 21 CUT8 points scaled to $[-3,3]^2$ (area ∝ quadrature weight) plus 8 boundary points. Middle: the 59 CUT8 points in $[-1,1]^3$. Right: CUT8 grows far more slowly with dimension than a 5-per-axis Gauss–Hermite grid, and more slowly than the degree-8 dictionary.</figcaption></figure>
+<p>The last row is the key to the next section. With CUT points, the dictionary of candidate monomials grows faster than the number of points, so $D\mathbf c=F$ is <b>under-determined</b>: there are infinitely many value functions that satisfy the GHJB exactly at every point.</p>
+
+<h2 id="l1">5 · Picking the basis: iterative weighted ℓ1</h2>
+<p>In 1-D, $N$ points pick out a unique interpolating polynomial of degree $N-1$. In $n$-D they don't. There are many monomials of each degree, and which subset is well posed depends on where the points are. The classical answer is de Boor and Ron's <i>least interpolation</i>: Gaussian elimination on the Vandermonde matrix, column by column in order of degree. The paper replaces it with a sparse-approximation problem over an over-complete dictionary:</p>
+$$ P_3:\quad \min_{\mathbf c}\ \|W\mathbf c\|_1\quad\text{s.t.}\quad D\mathbf c=F,\qquad A\mathbf c\ge \mathbf 0,\qquad \mathbf c^\top\boldsymbol\phi(\mathbf 0)=0,\qquad \mathbf c_{\mathcal C}=\mathbf 0 . $$
+<p>$A_{ij}=\phi_j(\mathbf x_i)$, so $A\mathbf c\ge0$ asks for $V\ge0$ at the points. The weights $W=\operatorname{diag}(w_j)$ grow with total degree, so high-degree terms cost more. $\mathcal C$ is a set of coefficients forced to zero. Algorithm 1 grows $\mathcal C$ one index at a time, always adding the smallest surviving coefficient, until only $N$ terms are left.</p>
+<pre class="wp-block-code"><code>Algorithm 1  (iterative ℓ1, c* = Opt(m, N)(D, F, A))
+  C ← ∅
+  for i = 0 … m − N:
+      c* ← argmin ‖W c‖₁  s.t.  D c = F,  A c ≥ 0,  φ(0)ᵀc = 0,  c_C = 0
+      C  ← C ∪ { argmin_{j ∉ C} |c*_j| }
+
+Algorithm 2  (collocation policy iteration)
+  A ← [φ_j(x_i)]
+  for k = 0 … K:
+      build D, F from u_(k)          # one GHJB collocation row per point
+      c ← Opt(m, N)(D, F, A)
+      u_(k+1)(x) ← −½ R⁻¹ g(x)ᵀ J(x)ᵀ c</code></pre>
+<p>Both norms are piecewise linear, so each step is a linear program. The rerun writes it with split variables $\mathbf c=\mathbf p-\mathbf q$, $\mathbf p,\mathbf q\ge0$, cost $\mathbf w^\top(\mathbf p+\mathbf q)$, and solves it with HiGHS; the original used CVX. One practical point the rerun turned up: an ℓ1 optimum sits at a vertex of the feasible polytope, so it usually has <i>no more nonzeros than equality constraints</i> to begin with. In every example below, the first LP already returns fewer than $N$ nonzero coefficients, and the sequential zeroing loop never has to remove anything.</p>
+
+<h2 id="interp">6 · Sparse vs least-degree interpolation (paper §III-C)</h2>
+<p>Before any control problem, the paper compares the two ways of choosing a basis on a plain interpolation task. Sixteen 4 × 4 Gauss–Legendre points, a dictionary of the 28 monomials of degree ≤ 6, and two target functions:</p>
+$$ p_1(\mathbf x)=\frac{3x_1^3+2x_1^2x_2+2x_1x_2^2+5x_2^3+8x_1^6+16x_1^3x_2^3+8x_2^6}{10^3}\ \text{ on }[-5,5]^2, $$
+$$ p_2(\mathbf x)=\frac{x_1^4\sin x_1+10x_2^4\cos^2x_2+x_1^8x_2+100x_2^6}{100}\ \text{ on }[-4,4]^2 . $$
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-interp.png" alt="True functions and absolute error maps for sparse l1 and least-degree interpolation." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 3. Rerun of the paper's Figs. 3–4. Left: true function and the 16 points. Middle and right: absolute error of the sparse-ℓ1 and least-degree interpolants, on a shared scale per row.</figcaption></figure>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Case</th><th>Paper: sparse / least degree</th><th>Rerun: sparse / least degree</th></tr>
+<tr><td>$p_1$, 16 points, max error</td><td class="num">1.03 × 10⁻⁸ / 106.1224</td><td class="num">1.8 × 10⁻¹² / <b>106.1224</b></td></tr>
+<tr><td>$p_2$, 9 points, RMSE</td><td class="num">98.99 / 350.08</td><td class="num">351.3 / 858.6</td></tr>
+<tr><td>$p_2$, 16 points, RMSE</td><td class="num">50.84 / 330.86</td><td class="num">189.8 / 604.7</td></tr>
+</table></div>
+<p>The polynomial case reproduces exactly. The ℓ1 solution keeps exactly the 7 monomials in $p_1$, with the right coefficients, and the least-degree interpolant's maximum error matches the paper to all four decimals. For the non-polynomial $p_2$, the ranking holds (sparse is 2.4–3.2× better), but the absolute RMSEs are larger than the published ones. I tried unweighted and degree-weighted ℓ1, single-shot and sequential, and minimum-norm least squares, and none of them reach 99 or 51. The published numbers probably come from a slightly different grid or error definition that the paper doesn't record.</p>
+
+<h2 id="ex-spin">7 · Example 2: spin stabilization (reproduces exactly)</h2>
+<p>Detumbling a rigid body with principal inertias $I=\operatorname{diag}(14,10,8)$ kg·m², using Euler's equations:</p>
+$$ I_1\dot\omega_1+(I_3-I_2)\omega_2\omega_3=u_1,\quad I_2\dot\omega_2+(I_1-I_3)\omega_3\omega_1=u_2,\quad I_3\dot\omega_3+(I_2-I_1)\omega_1\omega_2=u_3, $$
+<p>with $l=q\|\boldsymbol\omega\|^2$, $R=rI$, domain $[-1,1]^3$, the 59 CUT8 points, and the full degree-6 dictionary (84 monomials). There are two cases: high state cost ($q=50,r=3,\mathbf u_0=-\boldsymbol\omega$) and high control cost ($q=5,r=30,\mathbf u_0=-5\boldsymbol\omega$).</p>
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-spin.png" alt="Spin stabilization: initial and converged trajectories, cost versus norm, and sample trajectories for both cases." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 4. Both spin-stabilization cases. Columns: trajectories under $\mathbf u_0$; under the converged policy; simulated closed-loop cost compared with $V(\boldsymbol\omega_0)$ from collocation (the × marks sit inside the ○ marks); and the response from $\boldsymbol\omega_0=[1,1,1]$. With expensive control (bottom row), the optimal policy lets the free tumbling dynamics do most of the work.</figcaption></figure>
+<p>For both cases, policy iteration converges in 7–8 steps, and the ℓ1 selection keeps <b>3 of the 84</b> monomials:</p>
+$$ V(\boldsymbol\omega)=171.464\,\omega_1^2+122.474\,\omega_2^2+97.980\,\omega_3^2 , $$
+<p>the same polynomial the paper reports. It is exactly the analytic solution. Try $V=\alpha\sum_iI_i\omega_i^2$, i.e. $2\alpha\times$ kinetic energy. The gyroscopic terms cancel, $\sum_i I_i\omega_i\dot\omega_i\big|_{\mathbf u=0}=0$, and $\mathbf g^\top V_{\boldsymbol\omega}=2\alpha\boldsymbol\omega$, so the HJB reduces to</p>
+$$ q\|\boldsymbol\omega\|^2-\frac{\alpha^2}{r}\|\boldsymbol\omega\|^2=0\quad\Longrightarrow\quad\alpha=\sqrt{qr}=\sqrt{150}=12.2474, \qquad \mathbf u^*=-\frac{\alpha}{r}\,\boldsymbol\omega . $$
+<p>Both cases have $qr=150$, so they share one value function and differ only in the gain $\alpha/r$. This is the classical Debs–Athans result.</p>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Check</th><th>Case 1</th><th>Case 2</th></tr>
+<tr><td>Nonzero coefficients (of 84)</td><td class="num">3</td><td class="num">3</td></tr>
+<tr><td>max |c − analytic|</td><td class="num">2.8 × 10⁻¹⁴</td><td class="num">9.7 × 10⁻¹⁴</td></tr>
+<tr><td>HJB residual, RMS over 4000 random points</td><td class="num">1.5 × 10⁻¹⁴</td><td class="num">1.4 × 10⁻¹⁴</td></tr>
+<tr><td>|V(ω₀) − simulated cost| / cost, 48 starts</td><td class="num">≤ 1.7 × 10⁻⁷</td><td class="num">≤ 3.0 × 10⁻⁷</td></tr>
+<tr><td>Cost relative to $\mathbf u_0$ (mean)</td><td class="num">0.46</td><td class="num">0.16</td></tr>
+</table></div>
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-spin-coeffs.png" alt="Bar chart of the 84 coefficients, only the three quadratic diagonal terms are nonzero." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 5. The 84 converged coefficients for Case 1 on a log scale. Gray bars are exactly zero: the ℓ1 problem rejects every cross term and every term above degree 2 by itself.</figcaption></figure>
+<p>This is the best case for the method. The true value function lies in the dictionary, it is sparse, and the ℓ1 objective finds it exactly. The ℓ1 objective is also doing real work here. 59 equations with 84 unknowns leave a 25-dimensional family of exact interpolants, and the sparsest one happens to be the true solution.</p>
+
+<h2 id="ex-vdp">8 · Example 1: Van der Pol (does not reproduce)</h2>
+<p>The forced Van der Pol oscillator, with $Q=50I$, $R=5$, $\mathbf u_0=-1.2(x_1+x_2)$ and the domain $[-3,3]^2$:</p>
+$$ \dot x_1=x_2,\qquad \dot x_2=-x_1+(1-x_1^2)\,x_2+u . $$
+<p>The paper uses the 21 CUT8 points plus the 8 boundary points (29 in all) and a degree-7 dictionary (36 monomials). It reports a 14-term value function after at most 20 policy iterations:</p>
+$$ \begin{aligned}V_{\text{paper}}&=33.926x_1^2+3.047x_1x_2+27.881x_2^2+4.349x_1^4+8.09x_1^3x_2-1.735x_1^2x_2^2-1.216x_1x_2^3-1.265x_2^4\\&\quad-0.731x_1^5x_2-0.208x_1^4x_2^2-0.043x_1^3x_2^3+0.049x_1^2x_2^4+0.106x_1x_2^5+0.076x_2^6 .\end{aligned} $$
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-paper-fig5-vdp.png" alt="Figure 5 of the paper: Van der Pol results." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 6. The published result (Fig. 5 of the paper): initial and optimal trajectories, value vs ‖x‖, the value surface, and level sets over the unforced flow.</figcaption></figure>
+<p>Rerunning that setup with the verified port (§10) converges in 7 iterations, also to a 14-term value function, but a different one:</p>
+$$ \begin{aligned}V_{\text{rerun}}&=7.158x_1^2-9.637x_1x_2+26.905x_2^2+9.207x_1^3x_2-0.584x_1^2x_2^2-2.259x_1x_2^3-1.157x_2^4\\&\quad+0.313x_1^6-0.618x_1^5x_2-0.108x_1^4x_2^2+0.008x_1^3x_2^3-0.004x_1^2x_2^4+0.121x_1x_2^5+0.050x_2^6 .\end{aligned} $$
+<p>Thirteen of the 14 monomials match. The rerun keeps $x_1^6$ where the paper keeps $x_1^4$, and the low-order coefficients disagree badly. To judge which controller is better, I computed the true optimal cost $J^*(\mathbf x_0)$ from 48 starting states. Each comes from solving Pontryagin's state–costate boundary-value problem over a 15 s horizon with the LQR cost-to-go as the terminal cost:</p>
+$$ \dot{\mathbf x}=\mathbf f-\tfrac12\mathbf gR^{-1}\mathbf g^\top\boldsymbol\lambda,\qquad \dot{\boldsymbol\lambda}=-2Q\mathbf x-\mathbf f_{\mathbf x}^\top\boldsymbol\lambda,\qquad \mathbf x(0)=\mathbf x_0,\quad \boldsymbol\lambda(T)=2P_{\text{LQR}}\,\mathbf x(T). $$
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-vdp-main.png" alt="Van der Pol: trajectories under u0, the published V and the rerun V; level sets of both V; cost versus norm." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 7. Top: closed-loop flows under $\mathbf u_0$, the published $V$ and the rerun $V$. Bottom: level sets of both value functions over the unforced flow, and the cost from 48 starts. The rerun's $V(\mathbf x_0)$ (blue dots) sits well below its own closed-loop cost (×), so it is not the cost-to-go of the policy it defines.</figcaption></figure>
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-vdp-ratio.png" alt="Box plots of closed-loop cost over optimal cost for four feedback laws." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 8. Closed-loop cost divided by the true optimum, over 48 initial states.</figcaption></figure>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Feedback law</th><th>median $J/J^*$</th><th>worst $J/J^*$</th><th>unstable starts</th></tr>
+<tr><td>initial $\mathbf u_0$</td><td class="num">2.42</td><td class="num">6.7</td><td class="num">0</td></tr>
+<tr><td><b>published $V$</b></td><td class="num"><b>1.13</b></td><td class="num"><b>1.42</b></td><td class="num">0</td></tr>
+<tr><td>rerun, paper setup</td><td class="num">2.33</td><td class="num">5.4</td><td class="num">0</td></tr>
+<tr><td>least-degree basis (de Boor–Ron-style)</td><td class="num">5.67</td><td class="num">unstable</td><td class="num">16 of 48</td></tr>
+</table></div>
+<p>The published value function is a good controller, within 13 % of optimal at the median and 42 % in the worst case. The rerun barely improves on the initial policy. The least-degree basis is much worse and unstable from some starts, which the paper also reports, so that part of the comparison holds.</p>
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-vdp-traj.png" alt="State and control histories from x0 = [3, 3] for each controller and the open-loop optimum." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 9. From $\mathbf x_0=[3,3]$: states (left) and control (right) for each feedback law, against the open-loop optimum from Pontryagin's conditions.</figcaption></figure>
+
+<h3 id="vdp-why">8.1 Why the rerun lands somewhere else</h3>
+<p>Two checks narrow it down.</p>
+<p><b>The published V is not a solution of the described collocation problem.</b> A converged policy-iteration solution satisfies its own GHJB exactly at every collocation point. Plugging the published coefficients into $D(\mathbf u_{\text{paper}})\mathbf c=F(\mathbf u_{\text{paper}})$ at the 29 points described gives a residual RMS of 317, against a right-hand side of RMS 879. So the published run differed from the description in some respect, such as the point set, scaling or iteration count. The repository has saved workspaces only for earlier Gauss–Legendre runs, not for this one. Rounding of the printed coefficients can't explain it either: even worst-case rounding (±0.0005 on each, ±0.005 on the two-decimal $x_1^3x_2$) moves the residual by at most 28, under a tenth of it.</p>
+<p><b>The described problem barely constrains V.</b> The CUT set is symmetric under $\mathbf x\to-\mathbf x$, and the Van der Pol vector field is odd. For an even $V$, the collocation rows at $\mathbf x_i$ and $-\mathbf x_i$ are identical, and the row at the origin is zero. So the 29 equations have rank 28 over all 36 columns but only <b>14 over the 15 even monomials</b>, and every iteration leaves exactly one even monomial to drop. The ℓ1 objective chooses which one, and the choice matters a lot:</p>
+<figure style="margin:1.5em 0"><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/hjb-fig-vdp-sensitivity.png" alt="Closed-loop cost relative to optimum for each choice of the dropped even monomial." style="width:100%;height:auto" loading="lazy"><figcaption style="font-size:0.9em;color:#6b7280">Figure 10. Policy iteration with each of the 15 possible 14-term supports, scored by closed-loop cost over the optimum (16 starts). The median runs from 1.21 to divergence, and the worst case from 1.45 to divergence (bars clipped at 50).</figcaption></figure>
+<p>Dropping $x_1^3x_2$ or $x_1^5x_2$ gives a controller within 21 % of optimal at the median, about as good as the published one. Dropping $x_2^2$ or $x_2^4$ gives one that diverges from some starts. The ℓ1 objective has no way to tell these apart, because it scores coefficient size, not closed-loop cost. On this problem the method's outcome is set by an essentially arbitrary tie-break. Adding a second, inner ring of CUT points (49 points) did not help either: at degree 10 and 12 the policies were worse still.</p>
+
+<div class="callout warn"><b>The general lesson.</b> Policy iteration's monotone-improvement guarantee assumes each GHJB is solved exactly. With $N$ collocation points and $m>N$ unknowns, "exact at the points" leaves an $(m-\text{rank}\,D)$-dimensional family of value functions, and the regularizer picks one. When the true $V$ is sparse in the dictionary, as in the spin example, the ℓ1 pick is the right one. When it isn't, the pick can be far from the policy's real cost-to-go, and the next policy inherits that error. The quantity worth monitoring is not convergence of $\mathbf c$ (the rerun's coefficients stop changing at the 10⁻⁹ level) but the gap between $V(\mathbf x_0)$ and the simulated closed-loop cost.</div>
+
+<h2 id="ex-att">9 · Example 3: 6-D attitude regulation</h2>
+<p><i>Rerun in progress. This section will be filled in when the 6-D policy iteration finishes.</i></p>
+
+<h2 id="port">10 · Checking the port against the MATLAB code</h2>
+<p>A reproduction that disagrees with a paper is only useful if the reproduction is right. The <a href="https://github.com/nadurthi/HJB">HJB repository</a> holds the original MATLAB scripts and several saved workspaces from earlier development runs (Gauss–Legendre points, degree-6 dictionary). One of them, <code>HJBcollSol_2D_vanderpoll_c1_lowcontrol.mat</code> ($Q=25I$, $R=3$), ends with CVX status <i>Solved</i>. It stores the collocation points, the final $D$, $F$ and constraint matrices, and the coefficients from all 40 policy iterations. Replaying it in Python:</p>
+<div class="tbl-wrap"><table class="compact">
+<tr><th>Check</th><th>Python vs MATLAB</th></tr>
+<tr><td>Vandermonde matrix $A$ (after matching monomial order)</td><td class="num">max diff 9 × 10⁻¹⁶</td></tr>
+<tr><td>Collocation matrix $D$ and right-hand side $F$</td><td class="num">7 × 10⁻¹², 1 × 10⁻¹²</td></tr>
+<tr><td>ℓ1 LP on MATLAB's own constraint matrices</td><td class="num">coefficients within 2.7 × 10⁻⁷; objective 64.998517 vs CVX 64.998518</td></tr>
+<tr><td>All 40 policy iterations, run independently in Python</td><td class="num">relative coefficient difference ≤ 4 × 10⁻⁶ (≈ 10⁻⁸ at convergence)</td></tr>
+</table></div>
+<p>The workspace with the paper's exact cost weights ($Q=50I$, $R=5$) is not usable as a reference, because its last CVX solve reports <i>Failed</i> and its stored coefficients violate their own equality constraints. That earlier Gauss–Legendre setup also never converged (its coefficients were still moving at iteration 40), which is presumably why the paper moved to CUT points.</p>
+<p>The Python LP differs from the MATLAB code in two harmless ways. It uses HiGHS with split variables instead of CVX, and it skips Algorithm 1's zeroing loop when the first ℓ1 solution already has at most $N$ nonzeros. Zeroing coefficients that are already zero cannot change an LP optimum, so the result is identical.</p>
+
+<h2 id="takeaways">11 · What to take from it</h2>
+<ul>
+<li><b>The two ideas work where their assumptions hold.</b> CUT points make collocation in 6-D affordable (about a thousand points instead of 15,625). The ℓ1 program finds the true value function exactly when that function is sparse in the dictionary, as in the spin example.</li>
+<li><b>Count independent equations, not points.</b> Symmetric point sets combined with odd or even dynamics produce duplicate rows. In the Van der Pol case, 29 points gave 14 equations. Check $\operatorname{rank}D$ on the columns that can actually be nonzero.</li>
+<li><b>Validate closed-loop, not coefficient convergence.</b> Every run here converged. The useful diagnostics are $V(\mathbf x_0)$ against the simulated cost of the policy it defines, the HJB residual off the collocation points, and, in low dimension, the Pontryagin optimum from a few starting states.</li>
+<li><b>ℓ1 is a tie-breaker, not a physics prior.</b> When the collocation equations leave freedom, ℓ1 picks the smallest coefficients, not the best controller. A natural fix is to add rows that the policy actually needs, such as more points along the closed-loop flow, or a least-squares term on extra test points.</li>
+</ul>
+
+<h2 id="reproduce">12 · Reproducing it</h2>
+<pre class="wp-block-code"><code>pip install numpy scipy matplotlib
+python interp_examples.py          # §6 interpolation benchmark
+python fig_interp_points.py        # Figs. 1, 3
+python fig_spin.py                 # §7 spin stabilisation (2 cases, ~2 min)
+python fig_vanderpol.py            # §8 Van der Pol, PMP optimum, sensitivity (~20 min)
+python run_attitude.py cut8        # §9 6-D attitude, CUT8 (~5 min per policy iteration)
+python run_attitude.py gh3         # §9 6-D attitude, Gauss–Hermite 3^6
+python fig_attitude.py             # §9 figures</code></pre>
+<p><code>hjbcoll.py</code> is the whole method in about 300 lines: the dictionary and its Jacobian, the weighted-ℓ1 LP, Algorithm 1, Algorithm 2, the least-degree baseline, closed-loop simulation and the Pontryagin boundary-value solver. <code>points/points.pkl</code> holds the CUT8 and Gauss–Hermite tables, copied from <a href="https://github.com/nadurthi/CUTpoints">nadurthi/CUTpoints</a>.</p>
+
+<h2 id="refs">13 · References</h2>
+<ul>
+<li>N. Adurthi, P. Singla, M. Majji. Sparse approximation-based collocation scheme for nonlinear optimal feedback control design. <i>J. Guidance, Control, and Dynamics</i> 40(2):248–264, 2017. <a href="https://doi.org/10.2514/1.G001755">doi:10.2514/1.G001755</a></li>
+<li>N. Adurthi, P. Singla, T. Singh. Conjugate unscented transformation: applications to estimation and control. <i>ASME J. Dynamic Systems, Measurement, and Control</i> 140(3), 2018.</li>
+<li>G. N. Saridis, C.-S. G. Lee. An approximation theory of optimal control for trainable manipulators. <i>IEEE Trans. Systems, Man, and Cybernetics</i> 9(3):152–159, 1979.</li>
+<li>R. W. Beard, G. N. Saridis, J. T. Wen. Galerkin approximations of the generalized Hamilton–Jacobi–Bellman equation. <i>Automatica</i> 33(12):2159–2177, 1997.</li>
+<li>D. L. Kleinman. On an iterative technique for Riccati equation computations. <i>IEEE Trans. Automatic Control</i> 13(1):114–115, 1968.</li>
+<li>C. de Boor, A. Ron. Computational aspects of polynomial interpolation in several variables. <i>Mathematics of Computation</i> 58(198):705–727, 1992.</li>
+<li>A. R. Debs, M. Athans. On the optimal angular velocity control of asymmetrical space vehicles. <i>IEEE Trans. Automatic Control</i> 14(1):80–83, 1969.</li>
+<li>Q. Huangfu, J. A. J. Hall. Parallelizing the dual revised simplex method. <i>Math. Prog. Computation</i> 10:119–142, 2018 (HiGHS).</li>
+</ul>
+<p class="footnote">Related: <a href="/tutorials/misc/l1-polyfit-cut-points/">CUT points and an L1 LP for density fitting</a> · <a href="/tutorials/misc/lincov/">Linear covariance analysis</a> · <a href="/tutorials/algorithms/">back to Algorithms</a>.</p>
+
+</div></div>
+<!-- /wp:html -->
