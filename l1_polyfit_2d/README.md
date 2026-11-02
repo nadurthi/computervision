@@ -20,6 +20,8 @@ s.t.  A_eq  λ = log f + teq       sample points with log f ≥ −9
 
 | File | What it is |
 |---|---|
+| `SUMMARY.md` | Test function, every sample point (raw, scaled, weight, f value) and the comparison results with a summary |
+| `make_summary.py` | Regenerates `SUMMARY.md` |
 | `l1fit.py` | The method: test surfaces, monomial basis, LP (scipy HiGHS), C sweep, evaluation |
 | `points.pkl` | The point sets: `uniform_5x5`, `gh_5x5`, `cut8`. Each has `raw` nodes, `w` weights, `X` nodes scaled to max\|x\| = 0.85, and `label` |
 | `make_points.py` | Regenerates `points.pkl` (CUT-8 comes from the `.mat` file in `nadurthi/CUTpoints`) |
