@@ -1,0 +1,6 @@
+numpy>=1.24
+scipy
+pandas
+matplotlib>=3.6
+# ffmpeg on PATH for scripts/make_videos.py
+# shapely + the original ResearchCodes repo only for scripts/check_against_original.py
