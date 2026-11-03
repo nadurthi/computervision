@@ -107,6 +107,23 @@ Re-run on the 2021 scenario (one unseeded run each): Seq-UAV λ = 3 → 82.6 % t
 * The code's enumerator keeps only the first trajectory for each *set* of visited nodes (184 of the 254 four-step paths from either start node). The port keeps this, and `enumerate_trajectories(..., faithful=False)` gives the full set.
 * Mean speed is clipped to 0.3 m/s inside every EKF prediction, as in the original motion model.
 
+## Large arena: when distance is the bottleneck
+
+`python scripts/run_large_arena.py` keeps the two UAVs (5 m/s, FOV 20 m / 10 m) and 10 targets but grows the
+arena from the paper's 100 m to 400 m (400 s, 5 random scenarios each, both planners, λ = 3; plus λ = 10 at 300 m).
+`sensorplan.scenario.track_report` gives one row per target: first detection, fixes, visits, re-acquisitions,
+losses, longest lost / blind stretch, % tracked, RMSE and % of time the truth is outside 3σ.
+
+| arena | planner | found /10 | % time tracked | losses / run | median gap between visits |
+|---|---|---|---|---|---|
+| 100 m | Seq-Time / Seq-UAV | 10.0 / 10.0 | 91 / 95 | 2.2 / 1.0 | 25 s / 19 s |
+| 200 m | Seq-Time / Seq-UAV | 9.4 / 10.0 | 48 / 60 | 12.6 / 12.2 | 79 s / 54 s |
+| 300 m | Seq-Time / Seq-UAV | 6.8 / 8.8 | 25 / 31 | 7.0 / 9.6 | 140 s / 52 s |
+| 400 m | Seq-Time / Seq-UAV | 4.2 / 6.6 | 11 / 21 | 4.2 / 7.0 | 94 s / 47 s |
+
+![arena sweep](media/sensorplan-arena-sweep.png)
+![life-cycle](media/sensorplan-lifecycle-300m.png)
+
 ## Citation
 
 If you use this code, please cite the paper above.
