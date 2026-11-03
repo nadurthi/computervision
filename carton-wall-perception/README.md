@@ -52,7 +52,7 @@ size (25–62 cm wide, 18–50 cm tall), stacked from the floor, with a second r
 - yaw up to ~±8°, roll ~±3°, pushed-in boxes, and missing front boxes that reveal the row behind;
 - 2–6 SKUs per wall, so neighbouring boxes share print, tape and labels (the repeated-texture problem);
 - random "seam darkness", so in some walls the seams between flush boxes are almost invisible;
-- a point light on the robot, so seams and recesses fall into shadow.
+- a point light on the robot with inverse-square falloff, so recessed boxes and gaps render darker (no cast shadows).
 
 A vectorised ray caster renders RGB (480×360), depth with distance-dependent noise and dropouts at
 discontinuities, normals, instance ids and per-box 6-DoF ground truth. The same scene is scanned by a
@@ -143,3 +143,16 @@ attribution.
 The YOLO and SAM runners use the Ultralytics package, which is AGPL-3.0. Check that before reusing this code in a
 closed-source product; the classical methods and SeamNet do not depend on it. Model weights carry their
 authors' licences (MobileSAM and SAM 2.1 are Apache-2.0).
+
+## Isaac Sim scene (next step)
+
+[`isaac_sim/box_wall_capture.py`](isaac_sim/box_wall_capture.py) builds a more realistic version of the scene in
+NVIDIA Isaac Sim (4.5 / 5.x): open-source cardboard box USDs (Isaac `Simple_Warehouse` `SM_CardBox*`, or any folder of
+USDs via `--box-usd-dir`) stacked against a wall on a factory floor, placeholder ceiling lights, an RGB-D camera and an
+RTX lidar. Each capture writes RGB, depth, instance and semantic masks (carton / wall / floor), tight 2D boxes, the
+lidar point cloud (plus per-point object ids where supported) and per-box ground-truth poses.
+
+```bash
+./python.sh isaac_sim/box_wall_capture.py --frames 5 --out box_wall_out          # headless
+./python.sh isaac_sim/box_wall_capture.py --gui --settle                          # watch it, let boxes settle under gravity
+```
