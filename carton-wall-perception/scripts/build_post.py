@@ -31,8 +31,8 @@ def img(name, alt, caption):
 
 
 def svg(name, caption):
-    s = open(f"docs/figures/{name}").read()
-    return f'<figure style="margin:1.5em 0">{s}<figcaption {CAP}>{caption}</figcaption></figure>'
+    png = name.replace(".svg", ".png")
+    return img(png, caption.split(". ", 1)[-1][:120], caption)
 
 
 def pq(M, m):
@@ -63,7 +63,7 @@ lead = f"""<p>A robot that unloads a trailer has to look at a wall of cardboard 
 <h3>Main results</h3>
 <ul>
 <li><b>On simulated walls, a small network trained on simulated walls wins by a lot.</b> YOLO11n-seg fine-tuned for 10 CPU epochs reaches a panoptic quality (PQ) of {pq(T,'yolo'):.2f} ({pq(H,'yolo'):.2f} on the hard walls). A 1.1 M-parameter RGB-D U-Net that only predicts seams reaches {pq(T,'seamnet_rgbd'):.2f} ({pq(H,'seamnet_rgbd'):.2f}). The best classical pipeline reaches {pq(T,best_classical):.2f} ({pq(H,best_classical):.2f}).</li>
-<li><b>Zero-shot foundation models are not box detectors.</b> FastSAM gets PQ {pq(T,'fastsam_rgb'):.2f} on its own and {pq(T,'fastsam_rgbd'):.2f} with a depth-based selector. SAM 2.1-tiny with the same selector gets {pq(T,'sam2t_rgbd'):.2f} on {sam_n} walls. They split boxes into labels and tape, or merge whole stacks, and on this CPU they take 0.6 s (FastSAM) to about 38 s (SAM 2.1-tiny with a 192-point prompt grid) per frame.</li>
+<li><b>On simulated walls, zero-shot foundation models trail far behind.</b> FastSAM gets PQ {pq(T,'fastsam_rgb'):.2f} on its own and {pq(T,'fastsam_rgbd'):.2f} with a depth-based selector. SAM 2.1-tiny with the same selector gets {pq(T,'sam2t_rgbd'):.2f} on {sam_n} walls. They split boxes into labels and tape, or merge whole stacks, and on this CPU they take 0.6 s (FastSAM) to about 38 s (SAM 2.1-tiny with a 192-point prompt grid) per frame.</li>
 <li><b>Depth matters most when seams are faint.</b> On hard walls with barely visible seams, RGB-only SeamNet drops to PQ {FS['test_hard/faint']['seamnet_rgb']:.2f} while RGB-D SeamNet holds at {FS['test_hard/faint']['seamnet_rgbd']:.2f}. On standard walls with clearly visible seams they differ by less than 0.01.</li>
 <li><b>Lidar alone cannot separate flush boxes at this density.</b> With 3 cm between rings, the best lidar-only method reaches F1 {L['lidar_range_image']['F1@0.5']:.2f}. Projecting the camera network's labels onto the same points gives F1 {L['cam2lidar_seamnet_rgbd']['F1@0.5']:.2f}: segment in the image, measure in 3D.</li>
 <li><b>On real photos the ranking flips.</b> Both networks trained only on simulated walls break real boxes into pieces along print, labels and strapping. FastSAM and SAM 2.1, which never saw a simulated wall, give clean per-box masks on the same photos. Simulation was enough to rank methods and to train geometry, but not enough to train appearance.</li>
@@ -100,7 +100,7 @@ body.append(f"""<h3 id="depth">Does depth help?</h3>
 <p>The surprise was how close RGB-only SeamNet comes to RGB-D SeamNet overall: PQ {pq(T,'seamnet_rgb'):.2f} versus {pq(T,'seamnet_rgbd'):.2f}. The simulator draws seams with a random darkness, so the walls can be split by how visible their seams are:</p>
 <div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:0.9em"><tr><th style="text-align:left;padding:4px 8px">Walls</th><th style="padding:4px 8px">Depth edges</th><th style="padding:4px 8px">RGB-D seams</th><th style="padding:4px 8px">SeamNet RGB</th><th style="padding:4px 8px">SeamNet RGB-D</th><th style="padding:4px 8px">YOLO (RGB)</th></tr>{fs_rows}</table></div>
 <p>Depth is insurance. Where seams are clearly visible, the RGB network has everything it needs. On hard walls with faint seams, the RGB-only network loses about {FS['test_hard/faint']['seamnet_rgbd']-FS['test_hard/faint']['seamnet_rgb']:.2f} PQ and the RGB-D one loses nothing. Real walls add shrink wrap, glare and dirty cardboard, which make RGB seams less reliable than in this simulator, so I would not ship an RGB-only unloader.</p>
-{img('seamnet_training.png', 'SeamNet validation seam F1 per epoch', 'Figure 5. SeamNet validation seam-pixel F1. The RGB-D model starts where the RGB model ends after six epochs: depth makes the task easier to learn.')}""")
+{img('seamnet_training.png', 'SeamNet validation seam F1 per epoch', 'Figure 5. SeamNet validation seam-pixel F1. The RGB-D model reaches 0.89 after one epoch, close to the 0.91 the RGB model reaches after six: depth makes the task easier to learn.')}""")
 
 body.append(f"""<h3 id="lidar">Lidar: geometry yes, boundaries no</h3>
 <p>The simulated lidar has 80 rings and 640 columns. At 2 m that is 5 mm between columns but 3 cm between rings, and 8 mm of range noise. Lidar-only methods find columns of boxes and recesses, but not individual boxes inside a flush stack. The gap is narrower than the ring spacing, and the whole front of the wall is one plane to within a couple of centimetres.</p>
@@ -119,7 +119,7 @@ if PC:
 if SP:
     sp_rows = "".join(f"<tr><td style='padding:4px 8px'>{NAMES[m][0]}</td><td style='text-align:right;padding:4px 8px'>{SP[m]['mean_s']*1000:.0f}</td></tr>" for m in SP if not m.startswith("_"))
     body.append(f"""<h3 id="speed">Speed</h3>
-<p>Mean wall-clock time per frame with nothing else running: {SP['_hardware']}, no GPU, 480×360 input. These are CPU numbers, useful only for ranking. On a Jetson with TensorRT every network would be one to two orders of magnitude faster, and the classical methods would barely change.</p>
+<p>Mean wall-clock time per frame with nothing else running: {SP['_hardware']}, no GPU, 480×360 input. These are CPU numbers, useful only for ranking. A Jetson with TensorRT would run every network much faster, but I have not measured that here.</p>
 <div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:0.9em"><tr><th style="text-align:left;padding:4px 8px">Method</th><th style="padding:4px 8px">ms / frame (CPU)</th></tr>{sp_rows}</table></div>""")
 
 body.append(f"""<h3 id="real">A look at real photos</h3>
@@ -127,12 +127,18 @@ body.append(f"""<h3 id="real">A look at real photos</h3>
 <p>The result is the opposite of the synthetic benchmark. SeamNet and YOLO, the two best methods on simulated walls, cut real boxes into fragments. Real cartons carry dense print, many labels, plastic strapping and lighting that my simulator never drew, and both networks learned "a sharp line means a seam". FastSAM and SAM 2.1 were trained on a billion real masks. They give one clean mask per box on most of these photos, including the regular pallet in the last row and the strapped cartons in the second. Their failures are the familiar ones: they also segment labels as objects, and they sometimes take a whole layer as one mask.</p>
 {img('real_photos.png', 'RGB-only methods on six real carton photos', 'Figure 8. RGB-only methods on real photos (Stacked Carton Dataset, Yang et al., Sensors 2022, CC BY-NC-SA 4.0). The networks trained on synthetic walls (columns 3–4) fragment real boxes. The zero-shot models (columns 5–6) segment them cleanly. This is the sim-to-real gap made visible.')}""")
 
-body.append(f"""<h3 id="architectures">Architecture deep dive</h3>
-<p>This section explains how each method turns pixels or points into boxes, down to layer shapes, parameter counts and the thresholds in the code. All parameter counts, shapes and compute figures were measured on the models used above (with <code>torch</code> and <code>thop</code>).</p>
-{svg('seamnet.svg', 'Figure 9. SeamNet, the network trained here: a 4-level U-Net that predicts background / interior / seam, decoded into instances with a watershed.')}
-{arch_html()}""")
+ARCH_URL = "https://perceptionstack.dev/carton-wall-perception-architectures/"
+MAIN_URL = "https://perceptionstack.dev/carton-wall-perception/"
+arch_body = []
+arch_body.append(f"""<p>This is the companion to <a href="{MAIN_URL}">Unloading a box wall: classical edges, small networks and SAM, compared</a>. That post has the results; this one explains how each method turns pixels or points into boxes, down to layer shapes, parameter counts and the thresholds in the code.</p>
+<p>All parameter counts, shapes and compute figures were measured on the models used in the experiments (with <code>torch</code> and <code>thop</code>), not copied from papers.</p>
+{svg('seamnet.svg', 'Figure 1. SeamNet, the network trained here: a 4-level U-Net that predicts background / interior / seam, decoded into instances with a watershed.')}
+{arch_html()}
+<p><a href="{MAIN_URL}">&larr; Back to the results</a></p>""")
 
-body.append(f"""<h3 id="takeaways">What I would build</h3>
+body.append(f"""<h3 id="architectures">How each method works</h3>
+<p>Every method above — the three classical camera pipelines, the three lidar methods, SeamNet, YOLO11n-seg, FastSAM, MobileSAM and SAM 2.1-tiny — is explained layer by layer, with measured tensor shapes, parameter counts and compute, in the companion post: <a href="{ARCH_URL}"><b>Carton-wall perception: architecture deep dive</b></a>.</p>
+<h3 id="takeaways">What I would build</h3>
 <ul>
 <li><b>Label real data with a foundation model, then distil.</b> Run SAM 2.1 (with the depth-prior selector) offline on a few thousand real frames from the target site, check the labels quickly, and train a small RGB-D instance-segmentation network (YOLO-seg class or a seam U-Net) on them plus the simulated walls. The small network gives the speed and the box prior; the real labels fix the appearance gap that Figure 8 shows.</li>
 <li>Use classical geometry for the <b>metric part</b>: plane fit, face rectangle, pick order. It is accurate to millimetres once the boundary is right.</li>
@@ -145,9 +151,24 @@ body.append(f"""<h3 id="takeaways">What I would build</h3>
 <li>Everything ran on 2 CPU cores. SeamNet trained for 6 epochs, YOLO for 10, and the SAM models were scored on 30 walls per split.</li>
 <li>The real-photo check is qualitative only, on six photos without depth. It is enough to show that the synthetic ranking does not carry over, but not to measure by how much.</li>
 </ul>
-<p><b>Code, data generator, trained weights and every result file:</b> <a href="{REPO}">github.com/nadurthi/computervision/carton-wall-perception</a>. The full architecture notes are in <a href="{REPO}/docs/ARCHITECTURES.md">docs/ARCHITECTURES.md</a>.</p>""")
+<p><b>Code, data generator, trained weights and every result file:</b> <a href="{REPO}">github.com/nadurthi/computervision/carton-wall-perception</a>. The architecture deep dive is <a href="{ARCH_URL}">here</a> and in <a href="{REPO}/docs/ARCHITECTURES.md">docs/ARCHITECTURES.md</a>.</p>""")
 
-html = "<!-- wp:html -->\n" + "\n".join(body) + "\n<!-- /wp:html -->"
+def finish(parts, path):
+    html = "\n".join(parts)
+    html = re.sub(r'<(td|th)( style="[^"]*"| style=\'[^\']*\')', lambda m: "<" + m.group(1) + (' style="text-align:right"' if "right" in m.group(2) else ""), html)
+    html = re.sub(r">\s*\n\s*<(?!/?(pre|code))", "><", html)            # compact whitespace between tags
+    html = "<!-- wp:html -->\n" + html + "\n<!-- /wp:html -->"
+    open(path, "w").write(html)
+    missing = re.findall(r"FIGURE:([\w.]+)", html)
+    print("written", path, len(html), "chars; figures without URL:", sorted(set(missing)))
+
+
+finish(body, "docs/post.html")
+finish(arch_body, "docs/post_architectures.html")
+import sys; sys.exit(0)
+html = "\n".join(body)
+html = re.sub(r'<(td|th)( style="[^"]*"| style=\'[^\']*\')', lambda m: "<" + m.group(1) + (' style="text-align:right"' if "right" in m.group(2) else ""), html)
+html = "<!-- wp:html -->\n" + html + "\n<!-- /wp:html -->"
 open("docs/post.html", "w").write(html)
 missing = re.findall(r"FIGURE:([\w.]+)", html)
 print("written docs/post.html", len(html), "chars; figures without URL:", sorted(set(missing)))

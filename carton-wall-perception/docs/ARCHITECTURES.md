@@ -74,7 +74,9 @@ differences:
 inliers. The plane normal is the singular vector with the smallest singular value.
 
 **Face rectangle.** Inlier points are expressed in an in-plane basis (e₁ = camera x projected onto the plane,
-e₂ = n × e₁), and `cv2.minAreaRect` gives the face centre, width and height in metres. This one function is
+e₂ = n × e₁). The rectangle's orientation comes from `cv2.minAreaRect`, and its extents from the 1st–99th
+percentiles of the points along its two axes, so a few pixels leaked from a neighbouring face do not stretch it.
+That gives the face centre, width and height in metres. This one function is
 used by the evaluator (pose error), by the pick planner, and by the zero-shot selector.
 
 ---
@@ -473,7 +475,7 @@ distance, size) for every correctly matched box whose front face is mostly visib
 | orientation change (yaw / tilt crease) | – | ✓ | ✓ | coarse | ✓ | weak | weak |
 | thin dark seam between flush boxes | confused with print and tape | – | ✓ (hand-tuned) | – (ring spacing ≫ gap) | ✓ (learned) | ✓ (learned, stride-4 masks) | ✓ if the seam is visible at stride 4–16 |
 | repeated identical boxes | – | ✓ | ✓ | ✓ | ✓ | NMS can merge or drop | needs one prompt per box |
-| knows tape and print are not edges | – | n/a | partly (black-hat) | n/a | ✓ (learned) | ✓ (learned) | – (often segments labels as objects) |
+| knows tape and print are not edges | – | n/a | partly (black-hat) | n/a | only for simulated print; fails on real photos | only for simulated print; fails on real photos | – (often segments labels as objects) |
 | metric size prior | – | – | – | – | – | – | only with the §9 selector |
 
 A row with a single ✓ points to a sensor or a prior you cannot drop. On flush walls, the thin-seam row is the
