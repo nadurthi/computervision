@@ -223,7 +223,7 @@ python scripts/results_table.py</code></pre>
     arch_intro = f"""<p>The rest of the page explains how each method turns pixels or points into boxes, down to layer shapes, parameter counts and the thresholds in the code. All parameter counts, shapes and compute figures were measured on the models used above (with <code>torch</code> and <code>thop</code>), not copied from papers.</p>
 {svg('seamnet.svg', 'Figure 9. SeamNet, the network trained here: a 4-level U-Net that predicts background / interior / seam, decoded into instances with a watershed.')}"""
     arch = re.sub(r'(<h2 id="arch-1">[^<]+</h2>)', lambda m: '<h2 id="how">How each method works</h2>' + arch_intro + m.group(1), arch, count=1)
-    header = json.dumps({"v": 1, "source": "applications/carton-wall-perception.html", "page": "applications-carton-wall-perception",
+    header = json.dumps({"v": 1, "source": "applications/carton-wall-perception.html", "page": "applications",
                          "title": PAGE_TITLE,
                          "description": "Classical edge and plane pipelines, lidar segmentation, two networks trained on simulated box walls and three zero-shot SAM models, scored on the same 200 walls with exact ground truth, then checked on real photos.",
                          "root": "/tutorials/", "scripts": ["nav"]})
