@@ -1,0 +1,34 @@
+{
+ "test/faint": {
+  "n_scenes": 26,
+  "depth_edges": 0.6403004252323165,
+  "rgbd_seams": 0.6661208833846491,
+  "seamnet_rgb": 0.8601680194497602,
+  "seamnet_rgbd": 0.8757870260780675,
+  "yolo": 0.9183624256109119
+ },
+ "test/visible": {
+  "n_scenes": 74,
+  "depth_edges": 0.6309109428631775,
+  "rgbd_seams": 0.6731876832305262,
+  "seamnet_rgb": 0.8783748853646773,
+  "seamnet_rgbd": 0.880333437240562,
+  "yolo": 0.9239875294842068
+ },
+ "test_hard/faint": {
+  "n_scenes": 41,
+  "depth_edges": 0.6157236835817422,
+  "rgbd_seams": 0.6200286189032275,
+  "seamnet_rgb": 0.8341013531228714,
+  "seamnet_rgbd": 0.8748503955272416,
+  "yolo": 0.8920793347279773
+ },
+ "test_hard/visible": {
+  "n_scenes": 59,
+  "depth_edges": 0.6019439390314604,
+  "rgbd_seams": 0.6200942826453026,
+  "seamnet_rgb": 0.8683691933748671,
+  "seamnet_rgbd": 0.8746582933214172,
+  "yolo": 0.915008963493659
+ }
+}

@@ -1,0 +1,8 @@
+data/train/
+data/val/
+data/test/
+data/test_hard/
+data/yolo/
+data/cache_*
+results/preds/
+__pycache__/

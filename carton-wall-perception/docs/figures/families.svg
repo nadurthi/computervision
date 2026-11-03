@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 520" style="width:100%;height:auto;display:block" role="img" aria-label="Four families of box segmentation: classical camera, lidar, trained networks and zero-shot foundation models, all ending in face fitting and pick planning." font-family="Inter, system-ui, sans-serif">
+<rect width="1200" height="520" fill="#ffffff"/>
+<defs><marker id="fa" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,4 L0,8 z" fill="#374151"/></marker></defs>
+<text x="30" y="34" font-size="18" font-weight="700" fill="#1f2937">Four ways to get from sensor data to box instances, one shared back end</text>
+<rect x="20" y="58" width="170" height="440" rx="12" fill="#f9fafb" stroke="#d1d5db"/>
+<text x="105" y="84" font-size="13" font-weight="800" fill="#374151" text-anchor="middle">SENSORS</text>
+<rect x="38" y="110" width="134" height="56" rx="8" fill="#ffffff" stroke="#9ca3af"/><text x="105" y="134" font-size="14" font-weight="600" text-anchor="middle" fill="#1f2937">RGB</text><text x="105" y="152" font-size="11" text-anchor="middle" fill="#6b7280">480×360</text>
+<rect x="38" y="190" width="134" height="56" rx="8" fill="#ffffff" stroke="#9ca3af"/><text x="105" y="214" font-size="14" font-weight="600" text-anchor="middle" fill="#1f2937">Depth</text><text x="105" y="232" font-size="11" text-anchor="middle" fill="#6b7280">noisy, dropouts</text>
+<rect x="38" y="370" width="134" height="56" rx="8" fill="#ffffff" stroke="#9ca3af"/><text x="105" y="394" font-size="14" font-weight="600" text-anchor="middle" fill="#1f2937">Lidar</text><text x="105" y="412" font-size="11" text-anchor="middle" fill="#6b7280">80 rings × 640</text>
+<rect x="220" y="96" width="250" height="88" rx="10" fill="#eff6ff" stroke="#2a78d6" stroke-width="1.6"/>
+<text x="235" y="120" font-size="14" font-weight="700" fill="#1d4ed8">Classical camera</text>
+<text x="235" y="140" font-size="12" fill="#374151">C1 straight lines (RGB)</text>
+<text x="235" y="157" font-size="12" fill="#374151">C2 depth jumps + creases</text>
+<text x="235" y="174" font-size="12" fill="#374151">C3 C2 + RGB seam valleys</text>
+<rect x="220" y="198" width="250" height="88" rx="10" fill="#fff7ed" stroke="#eb6834" stroke-width="1.6"/>
+<text x="235" y="222" font-size="14" font-weight="700" fill="#c2410c">Trained on synthetic walls</text>
+<text x="235" y="242" font-size="12" fill="#374151">SeamNet U-Net, 1.1 M params</text>
+<text x="235" y="259" font-size="12" fill="#374151">  (RGB or RGB + depth + normals)</text>
+<text x="235" y="276" font-size="12" fill="#374151">YOLO11n-seg, 2.9 M params</text>
+<rect x="220" y="300" width="250" height="70" rx="10" fill="#ecfdf5" stroke="#1baf7a" stroke-width="1.6"/>
+<text x="235" y="324" font-size="14" font-weight="700" fill="#047857">Zero-shot foundation models</text>
+<text x="235" y="344" font-size="12" fill="#374151">FastSAM-s · MobileSAM · SAM 2.1-t</text>
+<text x="235" y="361" font-size="12" fill="#374151">+ depth-prior selector</text>
+<rect x="220" y="384" width="250" height="88" rx="10" fill="#f5f3ff" stroke="#6250d6" stroke-width="1.6"/>
+<text x="235" y="408" font-size="14" font-weight="700" fill="#5b21b6">Lidar</text>
+<text x="235" y="428" font-size="12" fill="#374151">L1 range-image cuts</text>
+<text x="235" y="445" font-size="12" fill="#374151">L2 RANSAC planes + DBSCAN</text>
+<text x="235" y="462" font-size="12" fill="#374151">L3 camera labels → points</text>
+<line x1="172" y1="138" x2="216" y2="138" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="172" y1="218" x2="216" y2="160" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="172" y1="138" x2="216" y2="240" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="172" y1="218" x2="216" y2="250" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="172" y1="138" x2="216" y2="330" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="172" y1="218" x2="216" y2="345" stroke="#374151" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#fa)"/>
+<line x1="172" y1="398" x2="216" y2="420" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<path d="M345,286 L345,292 L520,292 L520,440 L474,440" fill="none" stroke="#6250d6" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#fa)"/>
+<text x="528" y="380" font-size="11" fill="#6250d6">camera labels</text><text x="528" y="394" font-size="11" fill="#6250d6">projected</text>
+<rect x="600" y="96" width="250" height="376" rx="12" fill="#f9fafb" stroke="#d1d5db"/>
+<text x="725" y="122" font-size="13" font-weight="800" fill="#374151" text-anchor="middle">INSTANCES</text>
+<text x="725" y="160" font-size="13" fill="#374151" text-anchor="middle">one label per box</text>
+<text x="725" y="178" font-size="13" fill="#374151" text-anchor="middle">(image pixels or lidar points)</text>
+<g transform="translate(655,210)"><rect x="0" y="0" width="60" height="44" fill="#c9a27a" stroke="#fff" stroke-width="3"/><rect x="60" y="0" width="80" height="44" fill="#b8916a" stroke="#fff" stroke-width="3"/><rect x="0" y="44" width="90" height="60" fill="#d4b08a" stroke="#fff" stroke-width="3"/><rect x="90" y="44" width="50" height="60" fill="#a8835e" stroke="#fff" stroke-width="3"/><rect x="0" y="104" width="140" height="50" fill="#c19a72" stroke="#fff" stroke-width="3"/></g>
+<line x1="474" y1="140" x2="596" y2="200" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="474" y1="242" x2="596" y2="242" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="474" y1="335" x2="596" y2="290" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="474" y1="428" x2="596" y2="340" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<rect x="890" y="96" width="290" height="376" rx="12" fill="#fefce8" stroke="#ca8a04" stroke-width="1.4"/>
+<text x="1035" y="122" font-size="13" font-weight="800" fill="#854d0e" text-anchor="middle">SHARED BACK END</text>
+<rect x="910" y="142" width="250" height="58" rx="8" fill="#ffffff" stroke="#ca8a04"/><text x="1035" y="166" font-size="13" font-weight="600" text-anchor="middle" fill="#1f2937">Plane fit per mask</text><text x="1035" y="184" font-size="11" text-anchor="middle" fill="#6b7280">RANSAC 8 mm + SVD refit → normal</text>
+<rect x="910" y="222" width="250" height="58" rx="8" fill="#ffffff" stroke="#ca8a04"/><text x="1035" y="246" font-size="13" font-weight="600" text-anchor="middle" fill="#1f2937">Face rectangle</text><text x="1035" y="264" font-size="11" text-anchor="middle" fill="#6b7280">min-area rectangle in the plane → w, h, centre</text>
+<rect x="910" y="302" width="250" height="58" rx="8" fill="#ffffff" stroke="#ca8a04"/><text x="1035" y="326" font-size="13" font-weight="600" text-anchor="middle" fill="#1f2937">Pick order</text><text x="1035" y="344" font-size="11" text-anchor="middle" fill="#6b7280">facing the robot, top-down, nearest first</text>
+<rect x="910" y="382" width="250" height="58" rx="8" fill="#ffffff" stroke="#ca8a04"/><text x="1035" y="406" font-size="13" font-weight="600" text-anchor="middle" fill="#1f2937">Scored against ground truth</text><text x="1035" y="424" font-size="11" text-anchor="middle" fill="#6b7280">F1, PQ, normal / centre / size error</text>
+<line x1="850" y1="284" x2="886" y2="284" stroke="#374151" stroke-width="1.6" marker-end="url(#fa)"/>
+<line x1="1035" y1="200" x2="1035" y2="218" stroke="#374151" stroke-width="1.4" marker-end="url(#fa)"/>
+<line x1="1035" y1="280" x2="1035" y2="298" stroke="#374151" stroke-width="1.4" marker-end="url(#fa)"/>
+<line x1="1035" y1="360" x2="1035" y2="378" stroke="#374151" stroke-width="1.4" marker-end="url(#fa)"/>
+</svg>

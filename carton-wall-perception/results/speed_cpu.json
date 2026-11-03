@@ -1,0 +1,39 @@
+{
+ "rgb_lines": {
+  "mean_s": 0.05059862466653916,
+  "frames": 6
+ },
+ "depth_edges": {
+  "mean_s": 0.13361481233308345,
+  "frames": 6
+ },
+ "rgbd_seams": {
+  "mean_s": 0.38762892166626745,
+  "frames": 6
+ },
+ "seamnet_rgb": {
+  "mean_s": 0.1041999051667517,
+  "frames": 6
+ },
+ "seamnet_rgbd": {
+  "mean_s": 0.10607479366687282,
+  "frames": 6
+ },
+ "yolo": {
+  "mean_s": 0.07860043950010247,
+  "frames": 6
+ },
+ "fastsam_rgbd": {
+  "mean_s": 0.5598216206666015,
+  "frames": 6
+ },
+ "mobilesam_rgbd": {
+  "mean_s": 36.58499458250026,
+  "frames": 6
+ },
+ "sam2t_rgbd": {
+  "mean_s": 37.867601403166795,
+  "frames": 6
+ },
+ "_hardware": "2 CPU cores, torch 2.15.0+cu132, FP32"
+}
