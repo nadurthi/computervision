@@ -163,9 +163,98 @@ def finish(parts, path):
     print("written", path, len(html), "chars; figures without URL:", sorted(set(missing)))
 
 
-finish(body, "docs/post.html")
-finish(arch_body, "docs/post_architectures.html")
-import sys; sys.exit(0)
+# ---------------------------------------------------------------------------------------------------------
+# Site layout: one full /tutorials/ page (results + architectures) and one short teaser post that links to it.
+# ---------------------------------------------------------------------------------------------------------
+PAGE_URL = "https://perceptionstack.dev/tutorials/applications/carton-wall-perception/"
+PAGE_TITLE = "Unloading a box wall: classical edges, small networks and SAM, compared"
+CODE_LINE = (f'<b>Code:</b> <a href="{REPO}">github.com/nadurthi/computervision &middot; carton-wall-perception/</a> '
+             f'&mdash; the box-wall simulator, every method, SeamNet and YOLO training, evaluation, figures, '
+             f'trained weights and every result file (<a href="{REPO}/requirements.txt">requirements.txt</a>, '
+             f'commands in the <a href="{REPO}#reproduce">README</a>).')
+
+
+def page_html():
+    intro, results_bullets = lead.split("<h3>Main results</h3>", 1)
+    sections = "\n".join(body[1:])                         # everything after the lead block
+    # drop the pointer to the old companion post and the closing code paragraph; the page carries both itself
+    sections = re.sub(r'<h3 id="architectures">.*?(?=<h3 id="takeaways">)', "", sections, flags=re.S)
+    sections = re.sub(r"<p><b>Code, data generator.*?</p>", "", sections, flags=re.S)
+    n = [0]
+
+    def num(m):
+        n[0] += 1
+        return f'<h2 id="{m.group(1)}">{n[0]} &middot; {m.group(2)}</h2>'
+    sections = sections.replace("<h4>", "<h3>").replace("</h4>", "</h3>")
+    sections = re.sub(r'<h3 id="([\w-]+)">([^<]+)</h3>', num, sections)
+    # first content figure is the PQ bar chart; give it a number so later references stay consistent
+    reproduce = f"""<h2 id="reproduce">{n[0] + 1} &middot; Code and how to reproduce</h2>
+<p>{CODE_LINE}</p>
+<pre><code>git clone https://github.com/nadurthi/computervision
+cd computervision/carton-wall-perception
+pip install -r requirements.txt
+# weights: yolo11n-seg.pt, FastSAM-s.pt, mobile_sam.pt, sam2.1_t.pt from github.com/ultralytics/assets releases
+export WEIGHTS=/path/to/weights
+
+python scripts/make_dataset.py                          # 1,480 walls with RGB, depth, lidar, labels
+python scripts/train_seamnet.py --cache
+python scripts/train_seamnet.py --mode rgbd --epochs 6
+python scripts/train_seamnet.py --mode rgb  --epochs 6
+python scripts/export_yolo.py 700
+yolo segment train model=$WEIGHTS/yolo11n-seg.pt data=data/yolo/boxes.yaml imgsz=480 epochs=10 batch=8 device=cpu
+python scripts/run_eval.py --split test --methods rgb_lines depth_edges rgbd_seams seamnet_rgb seamnet_rgbd yolo fastsam_rgb fastsam_rgbd
+python scripts/run_lidar_eval.py --split test
+python scripts/make_figures.py dataset bars qual lidar training picks real
+python scripts/results_table.py</code></pre>
+<div style="overflow-x:auto"><table class="compact"><tr><th>File</th><th>What it does</th></tr>
+<tr><td><a href="{REPO}/boxwall/scene.py"><code>boxwall/scene.py</code></a>, <a href="{REPO}/boxwall/render.py"><code>render.py</code></a></td><td>procedural box walls; vectorised ray caster for RGB, noisy depth and lidar with exact labels</td></tr>
+<tr><td><a href="{REPO}/boxwall/geometry.py"><code>boxwall/geometry.py</code></a></td><td>hole filling, back-projection, normals, RANSAC plane fit, face rectangle</td></tr>
+<tr><td><a href="{REPO}/boxwall/classical.py"><code>boxwall/classical.py</code></a></td><td>C1 RGB lines, C2 depth edges, C3 depth + RGB seam valleys</td></tr>
+<tr><td><a href="{REPO}/boxwall/lidar.py"><code>boxwall/lidar.py</code></a></td><td>L1 range-image cuts, L2 RANSAC + DBSCAN, L3 camera-to-lidar transfer</td></tr>
+<tr><td><a href="{REPO}/boxwall/seamnet.py"><code>boxwall/seamnet.py</code></a></td><td>SeamNet U-Net, input encoding, seam targets, watershed decoding</td></tr>
+<tr><td><a href="{REPO}/boxwall/zeroshot.py"><code>boxwall/zeroshot.py</code></a></td><td>FastSAM / MobileSAM / SAM 2.1 runners and the depth-prior selector</td></tr>
+<tr><td><a href="{REPO}/boxwall/evaluate.py"><code>boxwall/evaluate.py</code></a></td><td>Hungarian matching, F1, PQ, face-pose error</td></tr>
+<tr><td><a href="{REPO}/scripts"><code>scripts/</code></a></td><td>dataset generation, training, evaluation, speed benchmark, figures, tables, this page</td></tr>
+</table></div>"""
+    arch = arch_html()
+    arch = arch.replace("<h4>", "<h3>").replace("</h4>", "</h3>")
+    arch = re.sub(r'<h3 id="arch-(\d+)">\d+\. ([^<]+)</h3>', lambda m: f'<h2 id="arch-{m.group(1)}">A{m.group(1)} &middot; {m.group(2)}</h2>', arch)
+    arch = re.sub(r"§(\d+)", r"§A\1", arch)
+    arch_intro = f"""<p>The rest of the page explains how each method turns pixels or points into boxes, down to layer shapes, parameter counts and the thresholds in the code. All parameter counts, shapes and compute figures were measured on the models used above (with <code>torch</code> and <code>thop</code>), not copied from papers.</p>
+{svg('seamnet.svg', 'Figure 9. SeamNet, the network trained here: a 4-level U-Net that predicts background / interior / seam, decoded into instances with a watershed.')}"""
+    arch = re.sub(r'(<h2 id="arch-1">[^<]+</h2>)', lambda m: '<h2 id="how">How each method works</h2>' + arch_intro + m.group(1), arch, count=1)
+    header = json.dumps({"v": 1, "source": "applications/carton-wall-perception.html", "page": "applications-carton-wall-perception",
+                         "title": PAGE_TITLE,
+                         "description": "Classical edge and plane pipelines, lidar segmentation, two networks trained on simulated box walls and three zero-shot SAM models, scored on the same 200 walls with exact ground truth, then checked on real photos.",
+                         "root": "/tutorials/", "scripts": ["nav"]})
+    key = results_bullets.replace("<ul>", "<ul>", 1)
+    return f"""<!-- gdl-static {header} -->
+<div id="nav"></div><div class="page"><nav class="toc" id="toc"></nav><div class="content">
+<h1>{PAGE_TITLE}</h1>
+<p class="lead">{re.sub(r"^<p>|</p>\s*$", "", intro.strip())}</p>
+<p class="footnote">{CODE_LINE}</p>
+<div class="callout key"><b>Main results.</b>{key}</div>
+{sections}
+{reproduce}
+{arch}
+<p class="footnote">Real photos in Figure 8: Stacked Carton Dataset (Yang et al., <i>Sensors</i> 2022), CC BY-NC-SA 4.0. Related: <a href="/tutorials/applications/volleyball-pipeline/">Volleyball tracking</a> &middot; <a href="/tutorials/algorithms/ransac/">RANSAC &amp; robust estimation</a> &middot; <a href="/tutorials/applications/">back to Applications</a>.</p>
+</div></div>"""
+
+
+def teaser_html():
+    intro, results_bullets = lead.split("<h3>Main results</h3>", 1)
+    return f"""{intro}
+<p>{CODE_LINE}</p>
+<h3>Main results</h3>{results_bullets}
+{img('pq_bars.png', 'Panoptic quality of every method on standard and hard walls', 'Panoptic quality on 100 standard and 100 hard simulated walls. SAM models were scored on the first 30 walls of each split.')}
+{img('real_photos.png', 'RGB-only methods on six real carton photos', 'On real photos (Stacked Carton Dataset, CC BY-NC-SA 4.0) the networks trained on simulated walls (columns 3–4) fragment the boxes, while the zero-shot models (columns 5–6) segment them cleanly.')}
+<p>The full page has the simulator, every results table, annotated comparisons on standard and hard walls, the lidar experiments, pose accuracy and a pick plan, CPU timings, and a layer-by-layer deep dive into every method: three classical camera pipelines, three lidar methods, SeamNet, YOLO11n-seg, FastSAM, MobileSAM and SAM 2.1-tiny.</p>
+<p><a href="{PAGE_URL}">Read the full write-up &rarr;</a></p>"""
+
+
+import json
+finish([page_html()], "docs/page.html")
+finish([teaser_html()], "docs/teaser.html")
 html = "\n".join(body)
 html = re.sub(r'<(td|th)( style="[^"]*"| style=\'[^\']*\')', lambda m: "<" + m.group(1) + (' style="text-align:right"' if "right" in m.group(2) else ""), html)
 html = "<!-- wp:html -->\n" + html + "\n<!-- /wp:html -->"

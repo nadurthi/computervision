@@ -4,8 +4,9 @@ Detecting and segmenting stacked cardboard boxes for robotic truck and container
 (RGB-D) and a lidar. Every method in this folder runs end to end on a CPU and is scored against exact ground
 truth from a procedural box-wall simulator, so the comparisons are apples to apples.
 
-**Write-up:** [perceptionstack.dev — Unloading a box wall](https://perceptionstack.dev/carton-wall-perception/)
-· **Architecture deep dive:** [`docs/ARCHITECTURES.md`](docs/ARCHITECTURES.md)
+**Full write-up:** [perceptionstack.dev — Unloading a box wall](https://perceptionstack.dev/tutorials/applications/carton-wall-perception/)
+(results, annotated comparisons and a layer-by-layer architecture deep dive)
+· **Architecture notes:** [`docs/ARCHITECTURES.md`](docs/ARCHITECTURES.md)
 · **All numbers:** [`results/RESULTS.md`](results/RESULTS.md)
 
 ![Panoptic quality of every method](docs/figures/pq_bars.png)
@@ -19,6 +20,28 @@ truth from a procedural box-wall simulator, so the comparisons are apples to app
 | Trained here | **SeamNet** (1.1 M-param RGB-D U-Net that segments seams) · YOLO11n-seg fine-tuned | `boxwall/seamnet.py`, `scripts/` |
 | Zero-shot | FastSAM-s · MobileSAM · SAM 2.1-tiny, each with and without a depth-prior selector | `boxwall/zeroshot.py` |
 | Shared | depth hole filling, normals, RANSAC plane fit, face rectangle, pick planner, metrics | `boxwall/geometry.py`, `boxwall/evaluate.py` |
+
+### Code map
+
+| File | What it does |
+|---|---|
+| `boxwall/scene.py` | procedural box walls: columns of cartons, SKUs, gaps, yaw/tilt, pushed-in and missing boxes |
+| `boxwall/render.py` | vectorised ray caster: RGB, noisy depth with dropouts, normals, instance ids, scanning lidar |
+| `boxwall/geometry.py` | depth hole filling, back-projection, normals, RANSAC plane fit, robust face rectangle |
+| `boxwall/classical.py` | C1 RGB straight lines, C2 depth jumps + creases, C3 depth + RGB seam valleys |
+| `boxwall/lidar.py` | L1 range-image cuts, L2 RANSAC planes + DBSCAN, L3 camera-to-lidar label transfer |
+| `boxwall/seamnet.py` | SeamNet U-Net, 8-channel input encoding, seam targets, watershed decoding |
+| `boxwall/zeroshot.py` | FastSAM / MobileSAM / SAM 2.1-tiny runners and the depth-prior selector |
+| `boxwall/evaluate.py` | Hungarian matching, F1, panoptic quality, face-pose error |
+| `scripts/make_dataset.py` | renders train / val / test / test_hard splits |
+| `scripts/train_seamnet.py` | caches inputs and trains SeamNet (RGB-D or RGB) |
+| `scripts/export_yolo.py` | converts walls to a YOLO-seg dataset |
+| `scripts/run_eval.py` | runs any set of camera methods on a split, saves label maps and metrics |
+| `scripts/run_lidar_eval.py` | lidar point-level evaluation inside the camera view |
+| `scripts/run_real.py` | RGB-only methods on the real photos in `data/real/` |
+| `scripts/benchmark_speed.py` | clean CPU timing of every method |
+| `scripts/faint_seam_analysis.py`, `pose_common_subset.py`, `first30.py`, `recompute_metrics.py` | the extra analyses on the page |
+| `scripts/make_figures.py`, `results_table.py`, `build_post.py` | figures, tables and the web page / teaser HTML |
 
 ## The simulator
 
@@ -78,7 +101,7 @@ Sim-to-real check on real warehouse photos from the Stacked Carton Dataset (RGB 
 ## Reproduce
 
 ```bash
-pip install torch torchvision ultralytics scikit-image scipy matplotlib open3d opencv-contrib-python
+pip install -r requirements.txt
 # weights: yolo11n-seg.pt, FastSAM-s.pt, mobile_sam.pt, sam2.1_t.pt from github.com/ultralytics/assets releases
 export WEIGHTS=/path/to/weights
 

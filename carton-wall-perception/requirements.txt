@@ -1,0 +1,13 @@
+# carton-wall-perception — tested with Python 3.13, CPU only
+numpy>=2.0
+scipy>=1.13
+opencv-contrib-python>=4.10   # FastLineDetector lives in ximgproc (contrib)
+scikit-image>=0.24
+matplotlib>=3.9
+open3d>=0.19                  # lidar RANSAC + DBSCAN baseline
+torch>=2.4                    # SeamNet
+torchvision>=0.19
+ultralytics>=8.3              # YOLO11n-seg, FastSAM, MobileSAM, SAM 2.1 (AGPL-3.0)
+thop                          # parameter / MAC counts in docs/ARCHITECTURES.md
+cairosvg                      # optional: renders the SVG diagrams to PNG
+markdown                      # optional: builds the web page from docs/ARCHITECTURES.md
