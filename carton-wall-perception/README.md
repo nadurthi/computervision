@@ -148,7 +148,7 @@ authors' licences (MobileSAM and SAM 2.1 are Apache-2.0).
 
 [`isaac_sim/box_wall_capture.py`](isaac_sim/box_wall_capture.py) builds a more realistic version of the scene in
 NVIDIA Isaac Sim (4.5 / 5.x): open-source cardboard box USDs (Isaac `Simple_Warehouse` `SM_CardBox*`, or any folder of
-USDs via `--box-usd-dir`) stacked against a wall on a factory floor, placeholder ceiling lights, an RGB-D camera and an
+USDs via `--box-usd-dir`) stacked against a wall inside NVIDIA's ready-made warehouse (`--env slabs` for a plain floor and wall), placeholder ceiling lights, an RGB-D camera and an
 RTX lidar. Each capture writes RGB, depth, instance and semantic masks (carton / wall / floor), tight 2D boxes, the
 lidar point cloud (plus per-point object ids where supported) and per-box ground-truth poses.
 

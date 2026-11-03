@@ -5,12 +5,16 @@ Run with Isaac Sim's own Python (standalone workflow):
     ./python.sh box_wall_capture.py                       # headless, writes to ./box_wall_out
     ./python.sh box_wall_capture.py --gui --frames 3      # watch it in the viewer
     ./python.sh box_wall_capture.py --box-usd-dir /path/to/my/cardboard_usds --settle
+    ./python.sh box_wall_capture.py --env-offset 0 6 0        # use another stretch of the warehouse wall
+    ./python.sh box_wall_capture.py --env slabs               # plain floor + wall, no warehouse
 
 Written against the Isaac Sim 4.5 / 5.x Python API (`isaacsim.*` modules). Older `omni.isaac.*` names are
 tried as a fallback where they differ.
 
 What it builds (Z up, metres):
-    * a factory floor (large slab, concrete material) and a wall plane at x = WALL_X
+    * the environment: by default NVIDIA's ready-made warehouse (Simple_Warehouse/full_warehouse.usd: concrete floor,
+      walls, racks, fixtures), moved so its +x wall is right behind the boxes, with any props in the box-wall /
+      sensor area removed and a flat wall panel at x = WALL_X. --env slabs uses a plain floor slab and wall instead.
     * a wall of cardboard boxes: a back row touching the wall and a partial front row, columns stacked
       from the floor. Box models are the open NVIDIA Isaac assets (Simple_Warehouse SM_CardBox*); any USD
       folder can be given instead. If no asset can be found the script falls back to procedural cartons.
@@ -21,7 +25,7 @@ What it writes per frame (in --out):
     rgb_XXXX.png                  colour image
     depth_XXXX.npy                distance to image plane, metres (float32, inf = no hit)
     instance_XXXX.png/.json       instance-id mask + id -> prim path / label mapping
-    semantic_XXXX.png/.json       semantic mask (classes: carton, wall, floor) + id -> label mapping
+    semantic_XXXX.png/.json       semantic mask (classes: carton, wall, floor, warehouse) + id -> label mapping
     bbox2d_XXXX.json              tight 2D boxes per carton
     lidar_XXXX.npy / .ply         lidar points (world frame, N x 3) and, when available, per-point object ids
     camera.json, lidar.json       intrinsics / extrinsics
@@ -51,6 +55,17 @@ ap.add_argument("--res", type=int, nargs=2, default=[1280, 720])
 ap.add_argument("--lidar-config", default="Example_Rotary",
                 help="RTX lidar config, e.g. Example_Rotary, Example_Solid_State, HESAI_XT32_SD10, OS1_REV6_128ch10hz1024res")
 ap.add_argument("--no-lidar", action="store_true")
+ap.add_argument("--env", choices=["warehouse", "slabs"], default="warehouse",
+                help="warehouse: NVIDIA's ready-made warehouse (floor, walls, racks, fixtures); slabs: plain floor + wall")
+ap.add_argument("--env-usd", default="/Isaac/Environments/Simple_Warehouse/full_warehouse.usd",
+                help="environment USD, relative to the Isaac assets root or an absolute path/URL")
+ap.add_argument("--wall-inset", type=float, default=0.3,
+                help="warehouse mode: distance from the building's outer bound (+x side) to its inner wall face (m)")
+ap.add_argument("--env-offset", type=float, nargs=3, default=[0.0, 0.0, 0.0], metavar=("DX", "DY", "YAW"),
+                help="warehouse mode: extra shift (m) and yaw (deg) of the building, to pick another wall section")
+ap.add_argument("--no-wall-slab", action="store_true",
+                help="warehouse mode: do not add the flat wall panel behind the boxes (use the building wall only)")
+ap.add_argument("--no-extra-lights", action="store_true", help="do not add the placeholder lights")
 args, _unknown = ap.parse_known_args()
 
 # --------------------------------------------------------------------------------------------- Isaac Sim app
@@ -186,13 +201,86 @@ def look_at_matrix(eye, target, up=(0.0, 0.0, 1.0)):
 
 
 # --------------------------------------------------------------------------------------------- scene
+def clear_zone_box():
+    """Volume that must be empty: the box wall plus the corridor the sensors look through."""
+    half_w = args.wall_width / 2 + 0.6
+    return (WALL_X - args.cam_dist - 0.8, -half_w, 0.02), (WALL_X - 0.02, half_w, args.max_height + 1.5)
+
+
+def load_warehouse(stage):
+    """Reference NVIDIA's warehouse and move it so its +x inner wall sits just behind the box wall
+    (x = WALL_X). Props (racks, pallets, cones...) inside the box-wall / sensor corridor are deactivated.
+    Structural pieces (floor, walls, ceiling: anything wider than 8 m) are kept."""
+    url = args.env_usd
+    if not ("://" in url or os.path.isabs(url) and os.path.exists(url)):
+        root = get_assets_root_path()
+        if root is None:
+            raise RuntimeError("Isaac assets root not found")
+        url = root + url
+    if not usd_exists(url):
+        raise RuntimeError(f"environment not found: {url}")
+    env = UsdGeom.Xform.Define(stage, "/World/Env/Warehouse")
+    env.GetPrim().GetReferences().AddReference(url)
+    add_label(env.GetPrim(), "warehouse")                     # children inherit it in the semantic mask
+    r = world_range(env.GetPrim())
+    size = np.array(r.GetSize())
+    scale = 0.01 if size.max() > 1000 else 1.0              # authored in centimetres
+    lo, hi = np.array(r.GetMin()) * scale, np.array(r.GetMax()) * scale
+    dx, dy, yaw = args.env_offset
+    xf = UsdGeom.Xformable(env)
+    # inner face of the +x wall -> just behind our wall panel; centre the building in y
+    tx = (WALL_X + (0.0 if args.no_wall_slab else 0.2)) - (hi[0] - args.wall_inset) + dx
+    ty = -(lo[1] + hi[1]) / 2 + dy
+    xf.AddTranslateOp().Set(Gf.Vec3d(tx, ty, 0.0))           # warehouse floor is at z = 0
+    xf.AddRotateZOp().Set(float(yaw))
+    if scale != 1.0:
+        xf.AddScaleOp().Set(Gf.Vec3f(scale, scale, scale))
+    print(f"[box-wall] warehouse {url}: {size * scale} m, shifted by ({tx:.2f}, {ty:.2f})")
+
+    (x0, y0, z0), (x1, y1, z1) = clear_zone_box()
+    cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_, UsdGeom.Tokens.render])
+    it = iter(Usd.PrimRange(env.GetPrim()))
+    removed = 0
+    for p in it:
+        if p == env.GetPrim() or not p.IsA(UsdGeom.Imageable):
+            continue
+        b = cache.ComputeWorldBound(p).ComputeAlignedRange()
+        if b.IsEmpty():
+            continue
+        bmin, bmax = np.array(b.GetMin()), np.array(b.GetMax())
+        if max(bmax[0] - bmin[0], bmax[1] - bmin[1]) > 8.0:  # structural: look inside it instead
+            continue
+        overlap = bmin[0] < x1 and bmax[0] > x0 and bmin[1] < y1 and bmax[1] > y0 and bmin[2] < z1 and bmax[2] > z0
+        if overlap:
+            p.SetActive(False)
+            removed += 1
+        it.PruneChildren()                                   # decided at this level either way
+    print(f"[box-wall] cleared {removed} warehouse props from the box-wall area")
+
+
 def build_static_scene(stage):
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     UsdGeom.SetStageMetersPerUnit(stage, 1.0)
     concrete = preview_material(stage, "/World/Looks/Concrete", (0.42, 0.42, 0.40), 0.9)
     wall_mat = preview_material(stage, "/World/Looks/WallPaint", (0.72, 0.73, 0.75), 0.85)
-    slab(stage, "/World/Env/Floor", (0, 0, -0.05), (FLOOR_SIZE, FLOOR_SIZE, 0.1), concrete, "floor")
-    slab(stage, "/World/Env/Wall", (WALL_X + 0.1, 0, 2.5), (0.2, 12.0, 5.0), wall_mat, "wall")
+    use_warehouse = args.env == "warehouse"
+    if use_warehouse:
+        try:
+            load_warehouse(stage)
+        except Exception as e:
+            print(f"[box-wall] warehouse not loaded ({e}); using plain floor and wall")
+            use_warehouse = False
+    if use_warehouse:
+        # invisible collision floor so --settle works whatever colliders the warehouse has
+        ground = slab(stage, "/World/Env/CollisionFloor", (0, 0, -0.05), (FLOOR_SIZE, FLOOR_SIZE, 0.1), concrete, "floor")
+        UsdGeom.Imageable(ground).MakeInvisible()
+        if not args.no_wall_slab:
+            slab(stage, "/World/Env/Wall", (WALL_X + 0.1, 0, 2.0), (0.2, args.wall_width + 2.0, 4.0), wall_mat, "wall")
+    else:
+        slab(stage, "/World/Env/Floor", (0, 0, -0.05), (FLOOR_SIZE, FLOOR_SIZE, 0.1), concrete, "floor")
+        slab(stage, "/World/Env/Wall", (WALL_X + 0.1, 0, 2.5), (0.2, 12.0, 5.0), wall_mat, "wall")
+    if args.no_extra_lights:
+        return
 
     # placeholder lighting: soft dome + a grid of rect lights 3.5 m up pointing down (change later)
     dome = UsdLux.DomeLight.Define(stage, "/World/Lights/Dome")
