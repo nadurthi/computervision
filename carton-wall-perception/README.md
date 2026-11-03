@@ -156,3 +156,21 @@ lidar point cloud (plus per-point object ids where supported) and per-box ground
 ./python.sh isaac_sim/box_wall_capture.py --frames 5 --out box_wall_out          # headless
 ./python.sh isaac_sim/box_wall_capture.py --gui --settle                          # watch it, let boxes settle under gravity
 ```
+
+### Unloading cell (robot + conveyor)
+
+[`isaac_sim/unload_cell.py`](isaac_sim/unload_cell.py): a UR10 with a suction gripper on a pedestal inside a trailer
+unloads the box wall onto a conveyor that runs out into an Isaac warehouse. Joint targets come from Lula inverse
+kinematics and are interpolated and sent every physics step from Python; the conveyor surface speed is a Python
+number (`--belt-speed`, PhysX surface velocity on a kinematic belt, with a direct-velocity fallback).
+
+Assets: NVIDIA SimReady cardboard boxes and conveyor ([`nvidia/simready-assets`](https://huggingface.co/datasets/nvidia/simready-assets),
+CC-BY-4.0; fetch with [`isaac_sim/download_simready_assets.py`](isaac_sim/download_simready_assets.py)), the UR10 and
+`Simple_Warehouse` from the Isaac assets library, and a procedural 53 ft dry-van interior (no open trailer USD found;
+`--trailer-usd` takes your own).
+
+```bash
+python isaac_sim/download_simready_assets.py --out ~/simready
+./python.sh isaac_sim/unload_cell.py --simready ~/simready --gui --belt-speed 0.4
+./python.sh isaac_sim/unload_cell.py --simready ~/simready --picks 10 --record cell_out/   # headless, camera + lidar per pick
+```
