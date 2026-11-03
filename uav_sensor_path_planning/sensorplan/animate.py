@@ -43,16 +43,21 @@ class MapView:
     def __init__(self, ax, res, title, show_plan=True, trail=12):
         self.ax, self.res, self.trail, self.show_plan = ax, res, trail, show_plan
         _style(ax)
-        ax.set_xlim(-8, 108)
-        ax.set_ylim(-8, 108)
+        nodes = res["grid_nodes"]
+        xs, ys = np.unique(nodes[:, 0]), np.unique(nodes[:, 1])
+        self.shape = (len(ys), len(xs))
+        d = xs[1] - xs[0]
+        ext = (xs[0] - d / 2, xs[-1] + d / 2, ys[0] - d / 2, ys[-1] + d / 2)
+        pad = 0.08 * (xs[-1] - xs[0])
+        ax.set_xlim(xs[0] - pad, xs[-1] + pad)
+        ax.set_ylim(ys[0] - pad, ys[-1] + pad)
         ax.set_aspect("equal")
         ax.set_xticks([])
         ax.set_yticks([])
-        nodes = res["grid_nodes"]
-        ax.scatter(nodes[:, 0], nodes[:, 1], s=2, c=GRIDC, zorder=1)
+        ax.scatter(nodes[:, 0], nodes[:, 1], s=2 if len(nodes) < 300 else 0.6, c=GRIDC, zorder=1)
         H = res["coverage"]
         self.expl = 1 - _bin_h(H) / np.log(2)
-        self.img = ax.imshow(self.expl[0].reshape(11, 11), origin="lower", extent=(-5, 105, -5, 105),
+        self.img = ax.imshow(self.expl[0].reshape(self.shape), origin="lower", extent=ext,
                              cmap=EXPLORED, vmin=0, vmax=1, zorder=0, interpolation="nearest")
         ax.set_title(title, color=FG, fontsize=12, loc="left", pad=6)
         self.hud = ax.text(0.01, 0.01, "", transform=ax.transAxes, color=FG, fontsize=9,
@@ -69,14 +74,14 @@ class MapView:
         k = min(int(np.floor(f)), K - 1)
         a = f - k if k < K - 1 else 0.0
         k1 = min(k + 1, K - 1)
-        self.img.set_data(self.expl[k].reshape(11, 11))
+        self.img.set_data(self.expl[k].reshape(self.shape))
         nodes = r["grid_nodes"]
         # --- targets
         truth, st = r["truth"], r["status"]
         for i in range(truth.shape[0]):
             c = TARGET_C[i % len(TARGET_C)]
             tp = (1 - a) * truth[i, k] + a * truth[i, k1]
-            k0 = max(0, k - 25)
+            k0 = max(0, k - self.trail * 2)
             tr = np.vstack([truth[i, k0:k + 1, :2], tp[None, :2]])
             found = (st[i, :k + 1] > 0).any()
             self.dyn += ax.plot(tr[:, 0], tr[:, 1], "-", color=c if found else MUTED, lw=0.8, alpha=0.45, zorder=3)
@@ -148,6 +153,12 @@ def _timeline(ax, res, title=None):
             if st[i, k]:
                 c = TARGET_C[i % len(TARGET_C)] if st[i, k] == 1 else "#3a4258"
                 ax.add_patch(Rectangle((t[k] - dt / 2, i - 0.35), dt, 0.7, fc=c, ec="none", alpha=0.9))
+    # measurement fixes (white ticks) and track losses (red x)
+    for (k, j, i, _) in res["meas"]:
+        ax.plot([t[k], t[k]], [i - 0.35, i + 0.35], color="white", lw=0.8, alpha=0.9, zorder=3)
+    for i in range(Nt):
+        for k in np.nonzero((st[i, :-1] == 1) & (st[i, 1:] == 2))[0]:
+            ax.scatter([t[k + 1]], [i], marker="x", s=36, c="#ff4d4d", lw=1.6, zorder=4)
     cover = ax.add_patch(Rectangle((t[0], -0.6), t[-1] - t[0], Nt, fc=PANEL, ec="none", zorder=5))
     cursor = ax.axvline(t[0], color=FG, lw=1, zorder=6)
     return cover, cursor
@@ -164,7 +175,7 @@ def render(runs, out, fps=25, substeps=5, dpi=100, size=(12.8, 7.2), suptitle=No
         ax = fig.add_axes([0.03, 0.04, 0.50, 0.78])
         views.append(MapView(ax, res, title))
         axt = fig.add_axes([0.62, 0.10, 0.36, 0.70])
-        cover, cursor = _timeline(axt, res, "target status (colour = tracked, grey = lost)")
+        cover, cursor = _timeline(axt, res, "target status · colour = tracked, grey = lost, | = position fix, × = track lost")
         t = res["t"]
 
         def upd_extra(f):

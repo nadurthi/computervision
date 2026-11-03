@@ -6,7 +6,7 @@ Clean NumPy reproduction of
 
 Two UAVs with circular, downward-looking fields of view are routed on a grid to discover and track ten moving ground targets whose positions are only known through EKF beliefs. Paths are chosen to maximise Gaussian mutual information plus a λ-weighted coverage (search) term, using the paper's two greedy approximations to the combinatorial joint search: **sequential in UAVs** and **sequential in time**.
 
-Write-up with the math and videos: <https://perceptionstack.dev/tutorials/gnc/uav-sensor-path-planning/>
+Write-up with the math and videos: <https://perceptionstack.dev/tutorials/applications/uav-sensor-path-planning/>
 
 <p align="center"><img src="media/sensorplan-poster.png" width="720"></p>
 
