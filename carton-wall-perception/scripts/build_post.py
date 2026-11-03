@@ -237,7 +237,7 @@ python scripts/results_table.py</code></pre>
 {sections}
 {reproduce}
 {arch}
-<p class="footnote">Real photos in Figure 8: Stacked Carton Dataset (Yang et al., <i>Sensors</i> 2022), CC BY-NC-SA 4.0. Related: <a href="/tutorials/applications/volleyball-pipeline/">Volleyball tracking</a> &middot; <a href="/tutorials/algorithms/ransac/">RANSAC &amp; robust estimation</a> &middot; <a href="/tutorials/applications/">back to Applications</a>.</p>
+<p class="footnote">Real photos in Figure 8: Stacked Carton Dataset (Yang et al., <i>Sensors</i> 2022), CC BY-NC-SA 4.0. Next step: <a href="https://perceptionstack.dev/box-wall-isaac-sim-camera-lidar/">the same problem in Isaac Sim, with a UR10 unloading cell</a>. Related: <a href="/tutorials/applications/volleyball-pipeline/">Volleyball tracking</a> &middot; <a href="/tutorials/algorithms/ransac/">RANSAC &amp; robust estimation</a> &middot; <a href="/tutorials/applications/">back to Applications</a>.</p>
 </div></div>"""
 
 
