@@ -49,6 +49,7 @@ def arch_html():
     md = md.replace("](../", f"]({REPO}/")
     md = re.sub(r"\]\((#[^)]+)\)", r"](\1)", md)
     html = markdown.markdown(md, extensions=["tables", "fenced_code"])
+    html = html.replace("<h3>", "<h4>").replace("</h3>", "</h4>")
     html = re.sub(r"<h2>(\d+)\. ([^<]+)</h2>", lambda m: f'<h3 id="arch-{m.group(1)}">{m.group(1)}. {m.group(2)}</h3>', html)
     html = html.replace("<table>", '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:0.88em">').replace("</table>", "</table></div>")
     html = html.replace("<hr />", "")
@@ -61,9 +62,9 @@ sam_n = T.get("sam2t_rgbd", {}).get("n_images", 0)
 lead = f"""<p>A robot that unloads a trailer has to look at a wall of cardboard and answer one question over and over: where does each box start and stop, and which one can I pull next without bringing the stack down? I compared every kind of method I could run end to end on a CPU: classical edge and plane pipelines on RGB, depth and lidar; two networks trained on synthetic walls; and three zero-shot "segment anything" models. All of them were scored on the same 200 simulated walls with exact ground truth.</p>
 <h3>Main results</h3>
 <ul>
-<li><b>A small network trained on synthetic walls wins, and it wins by a lot.</b> YOLO11n-seg fine-tuned for 10 CPU epochs reaches a panoptic quality (PQ) of {pq(T,'yolo'):.2f} ({pq(H,'yolo'):.2f} on the hard walls). A 1.1 M-parameter RGB-D U-Net that only predicts seams reaches {pq(T,'seamnet_rgbd'):.2f} ({pq(H,'seamnet_rgbd'):.2f}). The best classical pipeline reaches {pq(T,best_classical):.2f} ({pq(H,best_classical):.2f}).</li>
+<li><b>On simulated walls, a small network trained on simulated walls wins by a lot.</b> YOLO11n-seg fine-tuned for 10 CPU epochs reaches a panoptic quality (PQ) of {pq(T,'yolo'):.2f} ({pq(H,'yolo'):.2f} on the hard walls). A 1.1 M-parameter RGB-D U-Net that only predicts seams reaches {pq(T,'seamnet_rgbd'):.2f} ({pq(H,'seamnet_rgbd'):.2f}). The best classical pipeline reaches {pq(T,best_classical):.2f} ({pq(H,best_classical):.2f}).</li>
 <li><b>Zero-shot foundation models are not box detectors.</b> FastSAM gets PQ {pq(T,'fastsam_rgb'):.2f} on its own and {pq(T,'fastsam_rgbd'):.2f} with a depth-based selector. SAM 2.1-tiny with the same selector gets {pq(T,'sam2t_rgbd'):.2f} on {sam_n} walls. They split boxes into labels and tape, or merge whole stacks, and on this CPU they take 0.6 s (FastSAM) to about 38 s (SAM 2.1-tiny with a 192-point prompt grid) per frame.</li>
-<li><b>Depth matters most when seams are faint.</b> On hard walls with barely visible seams, RGB-only SeamNet drops to PQ {FS['test_hard/faint']['seamnet_rgb']:.2f} while RGB-D SeamNet holds at {FS['test_hard/faint']['seamnet_rgbd']:.2f}. On walls with clear seams the two are within {abs(FS['test/visible']['seamnet_rgbd']-FS['test/visible']['seamnet_rgb']):.2f}.</li>
+<li><b>Depth matters most when seams are faint.</b> On hard walls with barely visible seams, RGB-only SeamNet drops to PQ {FS['test_hard/faint']['seamnet_rgb']:.2f} while RGB-D SeamNet holds at {FS['test_hard/faint']['seamnet_rgbd']:.2f}. On standard walls with clearly visible seams they differ by less than 0.01.</li>
 <li><b>Lidar alone cannot separate flush boxes at this density.</b> With 3 cm between rings, the best lidar-only method reaches F1 {L['lidar_range_image']['F1@0.5']:.2f}. Projecting the camera network's labels onto the same points gives F1 {L['cam2lidar_seamnet_rgbd']['F1@0.5']:.2f}: segment in the image, measure in 3D.</li>
 <li><b>On real photos the ranking flips.</b> Both networks trained only on simulated walls break real boxes into pieces along print, labels and strapping. FastSAM and SAM 2.1, which never saw a simulated wall, give clean per-box masks on the same photos. Simulation was enough to rank methods and to train geometry, but not enough to train appearance.</li>
 <li><b>Once a box is found, its pose is easy.</b> Every method that finds a box fits its face to about 0.3° in normal and well under 1 cm (median) in face centre. Finding the right boundary is the whole problem.</li>
@@ -146,7 +147,7 @@ body.append(f"""<h3 id="takeaways">What I would build</h3>
 </ul>
 <p><b>Code, data generator, trained weights and every result file:</b> <a href="{REPO}">github.com/nadurthi/computervision/carton-wall-perception</a>. The full architecture notes are in <a href="{REPO}/docs/ARCHITECTURES.md">docs/ARCHITECTURES.md</a>.</p>""")
 
-html = "\n".join(body)
+html = "<!-- wp:html -->\n" + "\n".join(body) + "\n<!-- /wp:html -->"
 open("docs/post.html", "w").write(html)
 missing = re.findall(r"FIGURE:([\w.]+)", html)
 print("written docs/post.html", len(html), "chars; figures without URL:", sorted(set(missing)))

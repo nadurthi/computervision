@@ -64,7 +64,7 @@ and SAM 2.1 segment them cleanly (see the last figure). The practical recipe is 
 and distil it into the small network.
 
 See [`results/RESULTS.md`](results/RESULTS.md) for the full tables (F1 at IoU 0.5 and 0.75, panoptic quality,
-face-normal / centre / size error against ground truth, CPU time). Qualitative comparisons:
+face-normal / centre / size error against ground truth); clean CPU timings are in `results/speed_cpu.json`. Qualitative comparisons:
 
 ![Standard wall](docs/figures/qualitative_test.png)
 ![Hard wall](docs/figures/qualitative_hard.png)

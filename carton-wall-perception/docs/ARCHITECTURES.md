@@ -38,8 +38,8 @@ Contents
 | SAM 2.1-tiny | RGB + point prompts | SA-1B + SA-V, not fine-tuned | 39.0 M (27.2 M encoder) | 146 GMAC encoder @ 1024² | 1 mask per prompt |
 
 Compute is multiply-accumulates counted by `thop` over conv and linear layers. It does not count the
-matrix products inside attention, so the two SAM encoders are lower bounds. Runtimes on this machine's CPU are
-in [`results/RESULTS.md`](../results/RESULTS.md).
+matrix products inside attention, so the two SAM encoders are lower bounds. Clean CPU runtimes for every method are
+in [`results/speed_cpu.json`](../results/speed_cpu.json).
 
 The families differ in where the box prior lives:
 
