@@ -22,7 +22,7 @@ DEFAULTS = dict(
     init="tracking",                 # "tracking": N(gt0, 2 m, 10 deg) ; "global": uniform over the map
     init_pos_sig=2.0, init_yaw_sig_deg=10.0,
     use_rpe=True, max_range=60.0, seed=0,
-    adaptive=False, recheck_every=0, wide_when_spread_m=5.0, Lmax_wide=80.0, thmax_wide_deg=180.0, thmin_wide_deg=2.0,
+    adaptive=False, recheck_every=0, recheck_gain=1.25, recheck_thmin_deg=4.0, recheck_dx=1.0, wide_when_spread_m=5.0, Lmax_wide=80.0, thmax_wide_deg=180.0, thmin_wide_deg=2.0,
 )
 
 
@@ -113,10 +113,16 @@ def run(frames, Xmap, cfg, log=print):
             thmin = cfg["thmin_wide_deg"] if wide else cfg["thmin_deg"]
             win = np.all(np.abs(Xmap2 - xj[:2]) < Lmax + cfg["max_range"] + 5, axis=1)
             if win.sum() > 50 and len(X2) > 30:
+                # periodic re-check (not triggered by spread): coarser grid and rotation step, and a new pose must
+                # beat the current one by a margin, which also lets branch-and-bound prune most of the search
+                rc = recheck and not spread_wide
+                dxm = cfg["recheck_dx"] if rc else cfg["dxMatch"]
                 H2, c0, c1 = ll.bin_matcher(Xmap2[win], X2, Hg, np.full(2, Lmax), np.deg2rad(thmax),
-                                            np.deg2rad(thmin), np.full(2, cfg["dxMatch"]), np.full(2, cfg["dxBase"]))
-                s2m = dict(cost0=c0, cost=c1, accepted=bool(c1 > c0), wide=bool(wide))
-                if c1 > c0:
+                                            np.deg2rad(cfg["recheck_thmin_deg"] if rc else thmin), np.full(2, dxm),
+                                            np.full(2, cfg["dxBase"]), min_gain=cfg["recheck_gain"] if rc else 1.0)
+                gain = cfg["recheck_gain"] if rc else 1.0
+                s2m = dict(cost0=c0, cost=c1, accepted=bool(c1 > gain * c0), wide=bool(wide), recheck=bool(rc))
+                if c1 > gain * c0:
                     xn = xj.copy(); xn[:2] = H2[:2, 2]; xn[3] = np.arctan2(H2[1, 0], H2[0, 0])
                     Hn = ll.icp_point_to_plane(Xd, tree_map, Xmap_icp, nrm_map, ll.pose_to_H(xn), iters=20, max_corr=1.0)
                     pf.X[j, :6] = ll.H_to_pose(Hn)

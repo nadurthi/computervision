@@ -1,0 +1,944 @@
+{
+ "scene-1077": {
+  "location": "singapore-hollandvillage",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 41,
+   "removed_frac": 0.02878257450053232
+  },
+  "map_scenes": [
+   "scene-1077"
+  ],
+  "frames": 180,
+  "map_points": 448403,
+  "tracking": {
+   "summary": {
+    "n": 180,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.11722859565838499,
+    "median_xy": 0.09862947122138518,
+    "p95_xy": 0.1960605359867713,
+    "median_yaw": 0.09591189487798576,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.049070117012799286,
+    "path_m": 250.93399313624704,
+    "mean_speed": 12.641039764446582
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 180,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.1811637514100636,
+    "median_xy": 0.160814856267948,
+    "p95_xy": 0.29789914073176654,
+    "median_yaw": 0.138336368431207,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.03773542857785213,
+    "path_m": 250.93399313624704,
+    "mean_speed": 12.641039764446582
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 180,
+    "converged_at": 1,
+    "converged_after_s": 0.10008406639099121,
+    "rmse_xy": 0.09649048513060371,
+    "median_xy": 0.08043586429505177,
+    "p95_xy": 0.17044796814645857,
+    "median_yaw": 0.07764651062558629,
+    "frac_within_1m": 0.9944444444444445,
+    "final_xy": 0.13532564267233962,
+    "path_m": 250.93399313624704,
+    "mean_speed": 12.641039764446582,
+    "timing_per_frame_s": {
+     "read": 0.024965479638841416,
+     "rpe": 0.09805389907624987,
+     "pf": 0.6580388241344028,
+     "s2m": 5.057462377018399,
+     "setup_s": 8.30928659439087
+    },
+    "wall_s": 1059.6567723751068
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-0061": {
+  "location": "singapore-onenorth",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 39,
+   "removed_frac": 0.150750901987323
+  },
+  "map_scenes": [
+   "scene-0061"
+  ],
+  "frames": 172,
+  "map_points": 293647,
+  "tracking": {
+   "summary": {
+    "n": 172,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.19694888495714213,
+    "median_xy": 0.19546361886434982,
+    "p95_xy": 0.2809738254644796,
+    "median_yaw": 0.1212202446667589,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.13572376176526432,
+    "path_m": 90.75832185607834,
+    "mean_speed": 4.764350962291288
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 172,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.23746726576485455,
+    "median_xy": 0.20272461192480268,
+    "p95_xy": 0.3679492460812146,
+    "median_yaw": 0.1745613572494652,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.048926406607988825,
+    "path_m": 90.75832185607834,
+    "mean_speed": 4.764350962291288
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 172,
+    "converged_at": 1,
+    "converged_after_s": 0.10005402565002441,
+    "rmse_xy": 0.1979145707045137,
+    "median_xy": 0.19236464236871592,
+    "p95_xy": 0.2857545023296152,
+    "median_yaw": 0.12941280007680742,
+    "frac_within_1m": 0.9941860465116279,
+    "final_xy": 0.09904152433266407,
+    "path_m": 90.75832185607834,
+    "mean_speed": 4.764350962291288,
+    "timing_per_frame_s": {
+     "read": 0.025148785391519237,
+     "rpe": 0.07405452811440756,
+     "pf": 0.7286458569903707,
+     "s2m": 1.113791629325512,
+     "setup_s": 4.955411434173584
+    },
+    "wall_s": 339.18343353271484
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-0103": {
+  "location": "boston-seaport",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 40,
+   "removed_frac": 0.1165254757640568
+  },
+  "map_scenes": [
+   "scene-0103"
+  ],
+  "frames": 175,
+  "map_points": 302178,
+  "tracking": {
+   "summary": {
+    "n": 175,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.09461321725617845,
+    "median_xy": 0.06499055763533261,
+    "p95_xy": 0.2027470360117227,
+    "median_yaw": 0.056504806321591806,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.21045592361052898,
+    "path_m": 117.05774396461861,
+    "mean_speed": 6.065152661582447
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 175,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.15111546609577783,
+    "median_xy": 0.10777331228303666,
+    "p95_xy": 0.2807225710974959,
+    "median_yaw": 0.09828441472603829,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.10777331228303666,
+    "path_m": 117.05774396461861,
+    "mean_speed": 6.065152661582447
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 175,
+    "converged_at": 5,
+    "converged_after_s": 0.5501940250396729,
+    "rmse_xy": 0.08494061015649744,
+    "median_xy": 0.056846094710424774,
+    "p95_xy": 0.19430571405049207,
+    "median_yaw": 0.056764055172127556,
+    "frac_within_1m": 0.9714285714285714,
+    "final_xy": 0.08307853049159314,
+    "path_m": 117.05774396461861,
+    "mean_speed": 6.065152661582447,
+    "timing_per_frame_s": {
+     "read": 0.023057776859828405,
+     "rpe": 0.060132111140659875,
+     "pf": 0.6608069092886788,
+     "s2m": 0.34437140328543525,
+     "setup_s": 4.272944688796997
+    },
+    "wall_s": 194.98640727996826
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-0553": {
+  "location": "boston-seaport",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 41,
+   "removed_frac": 0.2553633777317988
+  },
+  "map_scenes": [
+   "scene-0553"
+  ],
+  "frames": 179,
+  "map_points": 21675,
+  "tracking": {
+   "summary": {
+    "n": 179,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.10288655798984807,
+    "median_xy": 0.08328934236854588,
+    "p95_xy": 0.1725047784494288,
+    "median_yaw": 0.07291569236860818,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.13205166585719266,
+    "path_m": 0.0003939388261381833,
+    "mean_speed": 1.989549237287736e-05
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 179,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.27946465599659465,
+    "median_xy": 0.27777881886849276,
+    "p95_xy": 0.3824803728151421,
+    "median_yaw": 0.2241129837009705,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.344534261009718,
+    "path_m": 0.0003939388261381833,
+    "mean_speed": 1.989549237287736e-05
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 179,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.09496453634147908,
+    "median_xy": 0.08491361553237708,
+    "p95_xy": 0.14759356075777258,
+    "median_yaw": 0.06276463195635257,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.1289438423260137,
+    "path_m": 0.0003939388261381833,
+    "mean_speed": 1.989549237287736e-05,
+    "timing_per_frame_s": {
+     "read": 0.021106927754492733,
+     "rpe": 0.03838030985613775,
+     "pf": 0.7024804347054252,
+     "s2m": 0.10611646401815575,
+     "setup_s": 0.8858253955841064
+    },
+    "wall_s": 156.5172848701477
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-0655": {
+  "location": "boston-seaport",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 41,
+   "removed_frac": 0.176500593198685
+  },
+  "map_scenes": [
+   "scene-0655"
+  ],
+  "frames": 178,
+  "map_points": 323734,
+  "tracking": {
+   "summary": {
+    "n": 178,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.212951057534314,
+    "median_xy": 0.15146882727150773,
+    "p95_xy": 0.4273220401804589,
+    "median_yaw": 0.11690002805842019,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.006238746688868177,
+    "path_m": 162.12311983704444,
+    "mean_speed": 8.230205375739494
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 178,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.3782857803373939,
+    "median_xy": 0.30828352445633883,
+    "p95_xy": 0.6586889519819146,
+    "median_yaw": 0.13055379709842935,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.04719122626021409,
+    "path_m": 162.12311983704444,
+    "mean_speed": 8.230205375739494
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 178,
+    "converged_at": 21,
+    "converged_after_s": 2.2997968196868896,
+    "rmse_xy": 0.2396393521401557,
+    "median_xy": 0.16004174677622163,
+    "p95_xy": 0.46165385051626945,
+    "median_yaw": 0.08972397915311515,
+    "frac_within_1m": 0.8820224719101124,
+    "final_xy": 0.07254314707703081,
+    "path_m": 162.12311983704444,
+    "mean_speed": 8.230205375739494,
+    "timing_per_frame_s": {
+     "read": 0.025027418404482724,
+     "rpe": 0.07029768590177043,
+     "pf": 0.6790779869208176,
+     "s2m": 0.9650142969710104,
+     "setup_s": 4.233214616775513
+    },
+    "wall_s": 314.11726236343384
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-0757": {
+  "location": "boston-seaport",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 41,
+   "removed_frac": 0.1619987841794452
+  },
+  "map_scenes": [
+   "scene-0757"
+  ],
+  "frames": 178,
+  "map_points": 146336,
+  "tracking": {
+   "summary": {
+    "n": 178,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.09456813157374575,
+    "median_xy": 0.08111201701288934,
+    "p95_xy": 0.1493748209313776,
+    "median_yaw": 0.1208126664243167,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.12542761387921247,
+    "path_m": 27.06213044061093,
+    "mean_speed": 1.3737649891541543
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 178,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.1303558148168074,
+    "median_xy": 0.12119126485547999,
+    "p95_xy": 0.20014579689806486,
+    "median_yaw": 0.1131265614221362,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.10280080780147292,
+    "path_m": 27.06213044061093,
+    "mean_speed": 1.3737649891541543
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 178,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.09748519296008357,
+    "median_xy": 0.0885909154966878,
+    "p95_xy": 0.1500589071497917,
+    "median_yaw": 0.1006054064949963,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.0856395428697707,
+    "path_m": 27.06213044061093,
+    "mean_speed": 1.3737649891541543,
+    "timing_per_frame_s": {
+     "read": 0.02433382259326035,
+     "rpe": 0.04245564107144816,
+     "pf": 0.6794532457094514,
+     "s2m": 0.15119381834951678,
+     "setup_s": 2.105468988418579
+    },
+    "wall_s": 162.16070914268494
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-1100": {
+  "location": "singapore-hollandvillage",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 40,
+   "removed_frac": 0.08352981181275586
+  },
+  "map_scenes": [
+   "scene-1100"
+  ],
+  "frames": 176,
+  "map_points": 141764,
+  "tracking": {
+   "summary": {
+    "n": 176,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.12850929403595812,
+    "median_xy": 0.08610096041325273,
+    "p95_xy": 0.2024417282445407,
+    "median_yaw": 0.28424174486071274,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.09247024127590119,
+    "path_m": 1.1303940619845498,
+    "mean_speed": 0.058270885825738764,
+    "timing_per_frame_s": {
+     "read": 0.041298730806870895,
+     "rpe": 0.1227494708516381,
+     "pf": 0.505486630580642,
+     "s2m": 0.8391155234792016,
+     "setup_s": 1.8118705749511719
+    },
+    "wall_s": 267.7878625392914
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 176,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.18800037513529755,
+    "median_xy": 0.15542213755455891,
+    "p95_xy": 0.30425771428300685,
+    "median_yaw": 0.28573730304885625,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.06197556958591489,
+    "path_m": 1.1303940619845498,
+    "mean_speed": 0.058270885825738764,
+    "timing_per_frame_s": {
+     "read": 0.02510056441480463,
+     "rpe": 0.07262829352508891,
+     "pf": 0.30445976690812543,
+     "s2m": 0.5108634951439771,
+     "setup_s": 3.0679666996002197
+    },
+    "wall_s": 163.96752452850342
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 176,
+    "converged_at": 6,
+    "converged_after_s": 0.6497490406036377,
+    "rmse_xy": 0.09574555401049123,
+    "median_xy": 0.08059715467471953,
+    "p95_xy": 0.166307732394237,
+    "median_yaw": 0.28612491873337065,
+    "frac_within_1m": 0.9659090909090909,
+    "final_xy": 0.07986577434408161,
+    "path_m": 1.1303940619845498,
+    "mean_speed": 0.058270885825738764,
+    "timing_per_frame_s": {
+     "read": 0.028579805384982716,
+     "rpe": 0.08024559915065765,
+     "pf": 0.8102709312330593,
+     "s2m": 0.5780360807072032,
+     "setup_s": 1.5366911888122559
+    },
+    "wall_s": 265.4627254009247
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-0796": {
+  "location": "singapore-queenstown",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 40,
+   "removed_frac": 0.047454390842251726
+  },
+  "map_scenes": [
+   "scene-0796"
+  ],
+  "frames": 176,
+  "map_points": 477238,
+  "tracking": {
+   "summary": {
+    "n": 176,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.13659999415950358,
+    "median_xy": 0.12178267893123279,
+    "p95_xy": 0.22960507301068905,
+    "median_yaw": 0.08300862505047445,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.25316318073549765,
+    "path_m": 235.1377911626561,
+    "mean_speed": 12.089122942852763
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 176,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.19643265215729247,
+    "median_xy": 0.16413408843935917,
+    "p95_xy": 0.32900300234959545,
+    "median_yaw": 0.14609821311541424,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.37645140655620607,
+    "path_m": 235.1377911626561,
+    "mean_speed": 12.089122942852763
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 176,
+    "converged_at": 1,
+    "converged_after_s": 0.10007381439208984,
+    "rmse_xy": 0.12284169796217438,
+    "median_xy": 0.10573234300906613,
+    "p95_xy": 0.22348833338311658,
+    "median_yaw": 0.08141653321556114,
+    "frac_within_1m": 0.9943181818181818,
+    "final_xy": 0.20081318452935995,
+    "path_m": 235.1377911626561,
+    "mean_speed": 12.089122942852763,
+    "timing_per_frame_s": {
+     "read": 0.03539528223601254,
+     "rpe": 0.132308615879579,
+     "pf": 0.9808963442390616,
+     "s2m": 7.082986956292933,
+     "setup_s": 9.188094139099121
+    },
+    "wall_s": 1458.4398839473724
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-1094": {
+  "location": "singapore-hollandvillage",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 40,
+   "removed_frac": 0.07226361296844315
+  },
+  "map_scenes": [
+   "scene-1094"
+  ],
+  "frames": 176,
+  "map_points": 410482,
+  "tracking": {
+   "summary": {
+    "n": 176,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.1518005296172521,
+    "median_xy": 0.10947780184468237,
+    "p95_xy": 0.24042906263984143,
+    "median_yaw": 0.07501024144837035,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.030102079075213537,
+    "path_m": 125.66117244810732,
+    "mean_speed": 6.477363035537712
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 176,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.18623494875689653,
+    "median_xy": 0.13807900817844931,
+    "p95_xy": 0.2959780588152093,
+    "median_yaw": 0.10149805798494789,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.2271775080073178,
+    "path_m": 125.66117244810732,
+    "mean_speed": 6.477363035537712
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 176,
+    "converged_at": 20,
+    "converged_after_s": 2.199687957763672,
+    "rmse_xy": 0.12968537999541388,
+    "median_xy": 0.12059454320300247,
+    "p95_xy": 0.20412158375126802,
+    "median_yaw": 0.06477257563491313,
+    "frac_within_1m": 0.8863636363636364,
+    "final_xy": 0.11587083783234749,
+    "path_m": 125.66117244810732,
+    "mean_speed": 6.477363035537712,
+    "timing_per_frame_s": {
+     "read": 0.0262560559944673,
+     "rpe": 0.08562312478368933,
+     "pf": 0.755017716776241,
+     "s2m": 0.9942015477202155,
+     "setup_s": 7.924410104751587
+    },
+    "wall_s": 335.8692739009857
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ },
+ "scene-0916": {
+  "location": "singapore-queenstown",
+  "map": "static keyframe map (same drive, annotated objects removed)",
+  "map_info": {
+   "keyframes": 41,
+   "removed_frac": 0.16380289406444257
+  },
+  "map_scenes": [
+   "scene-0916"
+  ],
+  "frames": 179,
+  "map_points": 408119,
+  "tracking": {
+   "summary": {
+    "n": 179,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.14667103597762102,
+    "median_xy": 0.12196050068638092,
+    "p95_xy": 0.24604034798998806,
+    "median_yaw": 0.10469851833422836,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.05250232465003552,
+    "path_m": 92.94067098071253,
+    "mean_speed": 4.705702131438976,
+    "timing_per_frame_s": {
+     "read": 0.026946661858585293,
+     "rpe": 0.09667741652973537,
+     "pf": 0.3556264978547336,
+     "s2m": 1.2822678528684477,
+     "setup_s": 7.762299060821533
+    },
+    "wall_s": 323.4451332092285
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0
+   }
+  },
+  "tracking_paper": {
+   "summary": {
+    "n": 179,
+    "converged_at": 0,
+    "converged_after_s": 0.0,
+    "rmse_xy": 0.17621611314788704,
+    "median_xy": 0.14590464058243222,
+    "p95_xy": 0.2983218259429746,
+    "median_yaw": 0.14945651877551847,
+    "frac_within_1m": 1.0,
+    "final_xy": 0.1817729591013868,
+    "path_m": 92.94067098071253,
+    "mean_speed": 4.705702131438976,
+    "timing_per_frame_s": {
+     "read": 0.024933912234599363,
+     "rpe": 0.08820599017862502,
+     "pf": 0.31352299551724055,
+     "s2m": 1.1703253165303662,
+     "setup_s": 5.974821329116821
+    },
+    "wall_s": 292.0772044658661
+   },
+   "cfg": {
+    "Npf": 1000,
+    "init": "tracking",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "sig0": 0.5,
+    "dmax": 10.0
+   }
+  },
+  "global": {
+   "summary": {
+    "n": 179,
+    "converged_at": 1,
+    "converged_after_s": 0.10012412071228027,
+    "rmse_xy": 0.1322236903622562,
+    "median_xy": 0.11113507290170499,
+    "p95_xy": 0.24124720186564877,
+    "median_yaw": 0.08901262475941571,
+    "frac_within_1m": 0.994413407821229,
+    "final_xy": 0.04090134535113366,
+    "path_m": 92.94067098071253,
+    "mean_speed": 4.705702131438976,
+    "timing_per_frame_s": {
+     "read": 0.025717450253790318,
+     "rpe": 0.08981286214050634,
+     "pf": 0.7572359066435744,
+     "s2m": 1.4971848586418108,
+     "setup_s": 5.326610326766968
+    },
+    "wall_s": 430.02443647384644
+   },
+   "cfg": {
+    "Npf": 2000,
+    "init": "global",
+    "s2m_every": 5,
+    "Lmax": 10.0,
+    "thmax_deg": 15.0,
+    "adaptive": true,
+    "recheck_every": 20
+   }
+  }
+ }
+}

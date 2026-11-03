@@ -170,11 +170,13 @@ def _cell_cost(H, P, cnt, off):
     return int(cnt[ok] @ H[i[ok], j[ok]])
 
 
-def bin_matcher(Xmap2, Xs2, H12, Lmax, thmax, thmin, dxMatch, dxBase=(30.0, 30.0)):
+def bin_matcher(Xmap2, Xs2, H12, Lmax, thmax, thmin, dxMatch, dxBase=(30.0, 30.0), min_gain=1.0):
     """Branch-and-bound multi-resolution BEV matching (Olson 2015) of the 2-D scan Xs2 (sensor frame) against map
     points Xmap2, searching absolute positions within +/-Lmax of the guess H12 (3x3, scan->map) and rotations in
     [-thmax, thmax] at step thmin. Boxes are first split down to dxBase, then refined best-first.
-    Returns (H12_corrected, cost_at_guess, cost_best). Mirrors binmatchers.binMatcherAdaptive_super."""
+    Returns (H12_corrected, cost_at_guess, cost_best). Mirrors binmatchers.binMatcherAdaptive_super.
+    Boxes whose upper bound is <= min_gain * cost_at_guess are pruned (only a better match is ever used); if nothing
+    survives, the guess is returned with cost_best = cost_at_guess."""
     mn_orig = Xmap2.min(0) - dxMatch
     H12mn = H12.copy(); H12mn[0:2, 2] -= mn_orig
     X1 = Xmap2 - mn_orig
@@ -201,8 +203,10 @@ def bin_matcher(Xmap2, Xs2, H12, Lmax, thmax, thmin, dxMatch, dxBase=(30.0, 30.0
         for lv in range(len(levels)):                                # distinct cells + counts per level (speed-up)
             P, cnt = np.unique(np.floor(Xth[th] / dxs[lv]).astype(np.int64), axis=0, return_counts=True)
             cells[th, lv] = (P, cnt)
-        heap.append((-_cell_cost(levels[0], *cells[th, 0], (0, 0)), 0.0, 0.0, dxs[0][0], dxs[0][1], 0, th))
     cost0 = _point_cost(levels[-1], dxs[-1], (H12mn[0:2, 0:2] @ Xs2.T).T + t0, np.zeros(2))
+    bound0 = min_gain * cost0
+    for th in Xth:
+        heap.append((-_cell_cost(levels[0], *cells[th, 0], (0, 0)), 0.0, 0.0, dxs[0][0], dxs[0][1], 0, th))
 
     def children(c, xs0, ys0, d0, d1, lvl, th):
         nl = lvl + 1; dx = dxs[nl]
@@ -211,17 +215,24 @@ def bin_matcher(Xmap2, Xs2, H12, Lmax, thmax, thmin, dxMatch, dxBase=(30.0, 30.0
                 if min(bb[2], xs + dx[0]) < max(bb[0], xs) or min(bb[3], ys + dx[1]) < max(bb[1], ys):
                     continue
                 c3 = _cell_cost(levels[nl], *cells[th, nl], (int(round(xs / dx[0])), int(round(ys / dx[1]))))
+                if c3 <= bound0:           # bound: this box can't beat the guess, and only an improvement is ever used
+                    continue
                 yield (-c3 - rng.random() / 1e10, xs, ys, dx[0], dx[1], nl, th)
 
     while any(h[3] > dxBase[0] or h[4] > dxBase[1] for h in heap):      # breadth expansion to dxBase
         heap = [k for h in heap for k in ((children(*h)) if (h[3] > dxBase[0] or h[4] > dxBase[1]) else (h,))]
+    heap = [h for h in heap if -h[0] > bound0]
+    if not heap:
+        return H12.copy(), cost0, float(cost0)
     heapq.heapify(heap)
-    while True:
+    while heap:
         h = heapq.heappop(heap)
         if h[5] == top:
             break
         for k in children(*h):
             heapq.heappush(heap, k)
+    else:
+        return H12.copy(), cost0, float(cost0)
     c, xs0, ys0, d0, d1, lvl, th = h
     HR = np.eye(3); HR[0:2, 0:2] = [[np.cos(th), -np.sin(th)], [np.sin(th), np.cos(th)]]
     Ht = np.eye(3); Ht[0:2, 2] = np.array([xs0, ys0]) - t0

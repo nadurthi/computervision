@@ -26,7 +26,8 @@ for sc in scenes:
                       ("tracking_paper", dict(Npf=1000, init="tracking", s2m_every=5, Lmax=10.0, thmax_deg=15.0, sig0=0.5, dmax=10.0)),
                       ("global", dict(Npf=2000, init="global", s2m_every=5, Lmax=10.0, thmax_deg=15.0, adaptive=True, recheck_every=20))]:
         if os.environ.get("MODES") and mode not in os.environ["MODES"].split(","):
-            res[mode] = json.load(open(os.path.join(out, "summary_all.json")))[sc][mode] if os.path.exists(os.path.join(out, "summary_all.json")) else None
+            prev = os.path.join(out, f"{sc}_{mode}.json")              # reuse an earlier run of this mode
+            res[mode] = dict(summary=localize.summarize(json.load(open(prev))), cfg=cfg) if os.path.exists(prev) else None
             continue
         st = time.time()
         recs, T = localize.run(frames, Xmap, cfg, log=lambda m: print("  ", m, flush=True))
