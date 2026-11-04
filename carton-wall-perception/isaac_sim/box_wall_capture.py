@@ -134,7 +134,10 @@ def usd_exists(url):
 def find_box_assets():
     """Local folder first, then the open Isaac Sim warehouse cardboard boxes."""
     if args.box_usd_dir:
-        files = sorted(glob.glob(os.path.join(args.box_usd_dir, "**", "*.usd*"), recursive=True))
+        # a SimReady download: only the top-level box files, not their payloads or the conveyors
+        files = sorted(glob.glob(os.path.join(args.box_usd_dir, "box_*", "simready_usd", "sm_*_01.usd")))
+        if not files:
+            files = sorted(glob.glob(os.path.join(args.box_usd_dir, "**", "*.usd*"), recursive=True))
         if files:
             print(f"[box-wall] using {len(files)} box USDs from {args.box_usd_dir}")
             return files
