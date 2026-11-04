@@ -1,0 +1,221 @@
+<!-- wp:html -->
+<!-- gdl-static {"v": 1, "source": "applications/multi-view-stereo.html", "page": "applications-multi-view-stereo", "title": "Multi-view stereo", "description": "Depth from N calibrated cameras: the geometry and math of plane sweeping, PatchMatch and learned cost volumes, why extra views fix the occlusions that break two-view stereo, and a benchmark of classical vs learned MVS and stereo on DTU, ETH3D, Middlebury and KITTI.", "root": "/tutorials/", "scripts": ["bootstrap", "nav"]} -->
+<div id="nav"></div><div class="page"><nav class="toc" id="toc"></nav><div class="content">
+
+<h1>Multi-view stereo: classical vs learned, and why N views beat two under occlusion</h1>
+<p class="lead">Give a computer N photographs with known intrinsics and extrinsics and ask for a depth map. With two views this is stereo, and it has a hard floor: every pixel the second camera cannot see has no correspondence, so its depth can only be guessed. Multi-view stereo (MVS) attacks that floor directly, because a point hidden from one camera is usually visible from another. This page derives the geometry and the algorithms, from plane sweeping and PatchMatch to learned cost volumes, and sets up a benchmark that measures the occlusion effect pixel by pixel: same images, same cameras, same ground truth, two-view stereo vs. N-view MVS, classical vs. learned.</p>
+<p class="footnote">Code (benchmark, AWS GPU runner, dataset and model setup): <a href="https://github.com/nadurthi/computervision/tree/multi-view-stereo/multi-view-stereo">nadurthi/computervision · multi-view-stereo/</a>. Background: <a href="/tutorials/algorithms/camera/">camera model</a> · <a href="/tutorials/algorithms/stereo/">stereo &amp; disparity</a> · <a href="/tutorials/algorithms/sfm/">structure from motion</a>. A short glossary-level intro is <a href="https://www.activeloop.ai/resources/glossary/multi-view-stereo-mvs/">Activeloop's MVS entry</a>; this page goes into the math and the code.</p>
+
+<div class="callout key"><b>On this page.</b>
+<ul>
+<li>§1–3: the calibrated N-view setting, the plane-induced homography that every MVS method is built on, and photo-consistency.</li>
+<li>§4–5: classical MVS (plane sweep, SGM, PatchMatch with view selection, geometric consistency, fusion) and learned MVS (MVSNet and its descendants), with the equations.</li>
+<li>§6: occlusion — why it caps two-view stereo, what N views buy, and why the <i>aggregation</i> rule matters as much as N.</li>
+<li>§7–8: the benchmark design (datasets with GT depth for every view, region labels, metrics) and published numbers.</li>
+<li>§9: results of the GPU run. §10: reproduce it on AWS.</li>
+</ul></div>
+
+<div class="callout warn"><b>Status (Nov 4, 2026).</b> The theory, the code and the published numbers are final. The GPU benchmark (§9) is scripted end to end and waits on an AWS G-instance quota approval; the only numbers in §9 so far come from the CPU smoke test on a synthetic ray-traced scene, labelled as such.</div>
+
+<h2 id="setting">1 · The calibrated N-view setting</h2>
+<p>We have a reference image $I_0$ and source images $I_1,\dots,I_{N-1}$. Camera $i$ has intrinsics $K_i$ and a world-to-camera extrinsic $[R_i\,|\,\mathbf t_i]$, so a world point $\mathbf X$ projects to</p>
+$$\tilde{\mathbf x}_i \simeq K_i\,(R_i\mathbf X+\mathbf t_i),\qquad \mathbf x_i=\pi(\tilde{\mathbf x}_i)=\big(\tilde x/\tilde z,\ \tilde y/\tilde z\big).$$
+<p>The goal is the depth map $D_0(\mathbf p)$ of the reference: for each pixel $\mathbf p$, the distance $d$ along the optical axis such that $\mathbf X=d\,K_0^{-1}\tilde{\mathbf p}$ lies on the surface. With the relative pose $T_{i0}=[R\,|\,\mathbf t]$ taking reference-camera coordinates to camera $i$, a depth hypothesis $d$ at $\mathbf p$ maps to</p>
+$$\mathbf x_i(\mathbf p,d)=\pi\!\big(K_i(d\,R\,K_0^{-1}\tilde{\mathbf p}+\mathbf t)\big)=\pi\!\big(d\,\mathbf a(\mathbf p)+\mathbf b\big),\qquad \mathbf a=K_iRK_0^{-1}\tilde{\mathbf p},\ \ \mathbf b=K_i\mathbf t .$$
+<p>As $d$ varies, $\mathbf x_i$ traces the epipolar line of $\mathbf p$ in image $i$. Depth estimation is the search along those N−1 lines for the $d$ at which all images agree. Two-view rectified stereo is the special case where the line is a scanline and $\mathbf x_1=\mathbf p-(fB/d,\,0)$, i.e. disparity $\delta=fB/d$.</p>
+<p><b>Precision vs baseline.</b> Differentiating $d=fB/\delta$ gives the classic error propagation</p>
+$$\sigma_d\approx\frac{d^2}{fB}\,\sigma_\delta ,$$
+<p>so depth error grows with the square of distance and shrinks with baseline $B$. A wide baseline is precise but sees the scene from a more different angle (more occlusion, more appearance change). MVS can have both: a near source for robust matching and a far source for precision, in the same cost.</p>
+
+<h2 id="homography">2 · The plane-induced homography</h2>
+<p>Almost every MVS algorithm, classical or learned, evaluates hypotheses of the form "the surface at $\mathbf p$ is locally the plane $\mathbf n^\top\mathbf X=\rho$" (in reference-camera coordinates). For points on that plane $\mathbf n^\top\mathbf X/\rho=1$, so</p>
+$$\mathbf X_i=R\mathbf X+\mathbf t=\Big(R+\frac{\mathbf t\,\mathbf n^\top}{\rho}\Big)\mathbf X
+\quad\Longrightarrow\quad
+\tilde{\mathbf x}_i\simeq H\,\tilde{\mathbf x}_0,\qquad H=K_i\Big(R+\frac{\mathbf t\,\mathbf n^\top}{\rho}\Big)K_0^{-1}.$$
+<ul>
+<li><b>Fronto-parallel planes</b> ($\mathbf n=[0,0,1]^\top$, $\rho=d$) give one homography per depth for the whole image. Warping each source with $H(d)$ for $d=d_1,\dots,d_D$ is the <i>plane sweep</i>; stacking the warped images (or features) is the <i>cost volume</i>.</li>
+<li><b>Slanted planes</b> ($\mathbf n$ per pixel, $\rho=\mathbf n^\top\mathbf X_\mathbf p=d\,\mathbf n^\top K_0^{-1}\tilde{\mathbf p}$) give one homography per pixel. That is what lets PatchMatch compare whole windows on tilted surfaces without the fronto-parallel bias.</li>
+</ul>
+<p>Learned MVS uses exactly the same $H$, applied to CNN feature maps instead of pixels. MVSNet calls it differentiable homography warping: bilinear sampling through $H$ is differentiable, so the network can be trained end to end through the geometry.</p>
+
+<h2 id="photo">3 · Photo-consistency</h2>
+<p>For a window $W(\mathbf p)$ and a hypothesis $\theta$ (a depth, or a plane), compare the reference window with the warped source window. The workhorse is zero-mean normalized cross-correlation,</p>
+$$\mathrm{ZNCC}_i(\mathbf p,\theta)=\frac{\sum_{\mathbf q\in W}w_\mathbf q\,(I_0(\mathbf q)-\bar I_0)(I_i(H_\theta\mathbf q)-\bar I_i)}{\sqrt{\sum w_\mathbf q (I_0(\mathbf q)-\bar I_0)^2\,\sum w_\mathbf q (I_i(H_\theta\mathbf q)-\bar I_i)^2}},\qquad c_i=1-\mathrm{ZNCC}_i\in[0,2],$$
+<p>invariant to gain and offset between cameras. Gipuma and COLMAP use a <b>bilateral</b> weight $w_\mathbf q=\exp(-|I_0(\mathbf q)-I_0(\mathbf p)|/\sigma_c-\|\mathbf q-\mathbf p\|/\sigma_s)$, so a window straddling a depth edge mostly listens to pixels with the centre's colour — a cheap guard against foreground fattening. Census and SAD are common in stereo; learned methods replace all of this with a learned similarity of feature vectors (dot product, group-wise correlation, or variance).</p>
+<p>With N−1 sources there are N−1 costs per hypothesis. How to combine them is the central design decision for occlusion and is the subject of §6.</p>
+
+<h2 id="classical">4 · Classical MVS</h2>
+
+<h3>4.1 Plane sweep (Collins 1996; Gallup et al. 2007)</h3>
+<p>Sample $D$ depths uniformly in <i>inverse</i> depth (uniform in disparity, which is uniform in pixel motion), warp every source through $H(d_k)$, compute $c_i(\mathbf p,k)$ with ZNCC, aggregate across sources into $C(\mathbf p,k)$, and take the winner:</p>
+$$k^\star(\mathbf p)=\arg\min_k C(\mathbf p,k),\qquad \hat k=k^\star+\frac{C_{k^\star-1}-C_{k^\star+1}}{2\,(C_{k^\star-1}-2C_{k^\star}+C_{k^\star+1})}$$
+<p>(parabolic sub-plane refinement). Cost: $O(D\cdot N\cdot HW)$ warps — embarrassingly parallel, which is why it was the first real-time MVS on GPUs. Its weakness is the fronto-parallel window on slanted surfaces and the independent per-pixel decision in textureless regions.</p>
+
+<h3>4.2 Semi-global aggregation (Hirschmüller 2008)</h3>
+<p>Treat the cost volume as a data term and add a smoothness prior along 1-D paths $\mathbf r$ through the image:</p>
+$$L_\mathbf r(\mathbf p,k)=C(\mathbf p,k)+\min\Big(L_\mathbf r(\mathbf p-\mathbf r,k),\ L_\mathbf r(\mathbf p-\mathbf r,k\pm1)+P_1,\ \min_j L_\mathbf r(\mathbf p-\mathbf r,j)+P_2\Big)-\min_j L_\mathbf r(\mathbf p-\mathbf r,j),$$
+<p>sum over 4–8 directions, then winner-take-all. $P_1$ penalizes small depth changes (slanted surfaces), $P_2$ large jumps (edges). OpenCV's SGBM is this algorithm on a two-view disparity volume; in our code the same recurrence runs on the multi-view plane-sweep volume (<code>planesweep_bestk_sgm</code>).</p>
+
+<h3>4.3 PatchMatch MVS (Bleyer 2011; Gipuma 2015; COLMAP 2016; ACMH/ACMM/ACMP/ACMMP 2019–2022)</h3>
+<p>Instead of testing all depths at every pixel, PatchMatch exploits that neighbouring pixels usually lie on the same plane. Each pixel carries a plane $\theta_\mathbf p=(d_\mathbf p,\mathbf n_\mathbf p)$:</p>
+<ol>
+<li><b>Random initialization</b>: $d$ uniform in inverse depth, $\mathbf n$ random facing the camera. Among millions of pixels a few guesses are close.</li>
+<li><b>Propagation</b>: pixel $\mathbf p$ evaluates the planes of its neighbours $\mathbf q$, re-intersected with its own ray: $d'=\rho_\mathbf q/(\mathbf n_\mathbf q^\top K_0^{-1}\tilde{\mathbf p})$. A good plane spreads across a surface in a few sweeps. Gipuma made this GPU-friendly with a red/black <b>checkerboard</b>: half the pixels update in parallel from the other half; ACMH picks the best candidates from eight adaptive neighbourhood regions.</li>
+<li><b>Refinement</b>: perturb $d$ and $\mathbf n$ with a shrinking radius; keep what lowers the cost.</li>
+</ol>
+<p>The cost of a plane at $\mathbf p$ is the bilateral ZNCC of §3 through the per-pixel homography of §2, aggregated over sources with <b>view selection</b>. COLMAP models, per pixel and source, a hidden variable "source $i$ sees $\mathbf p$" and infers it jointly with depth and normal by generalized EM, so occluded sources get low weight. ACMH uses a cheaper multi-hypothesis vote: sources whose costs are low for many candidate planes are trusted. Our <code>patchmatch</code> implementation uses the simplest robust rule, the mean of the $K$ best source costs.</p>
+<p><b>Geometric consistency.</b> After a photometric pass, ACMM (and COLMAP's second pass) adds a term that checks the hypothesis against the <i>source depth maps</i>: project $\mathbf p$ with $d$ into source $i$, read $D_i$ there, project back, and penalize the reprojection error $\epsilon_i(\mathbf p)$,</p>
+$$c_i^\text{geo}(\mathbf p,\theta)=c_i^\text{photo}(\mathbf p,\theta)+\lambda\min\big(\epsilon_i(\mathbf p),\epsilon_{\max}\big).$$
+<p>ACMM runs this coarse-to-fine; ACMP adds a <b>planar prior</b> from a triangulation of confident points so that textureless walls are filled by the plane through their textured borders; ACMMP combines both. This is still the strongest family of classical MVS on ETH3D (§8).</p>
+
+<h3>4.4 Depth-map fusion</h3>
+<p>N depth maps become one point cloud by keeping a reference depth only where enough sources agree: the reprojection round trip lands within one pixel and the relative depth difference is below 1%. This filter removes most outliers, and also most remaining occlusion errors (an occluded estimate rarely agrees with the views that actually see the point). DTU and ETH3D score the fused cloud by <b>accuracy</b> (distance from reconstruction to GT), <b>completeness</b> (GT to reconstruction) and their mean or an F-score.</p>
+
+<h2 id="learned">5 · Learned MVS</h2>
+<h3>5.1 MVSNet (Yao et al., 2018) — the template</h3>
+<p>Extract features $F_i=\phi(I_i)$ at ¼ resolution with a shared CNN. Warp each source feature map with $H(d_k)$ to get $V_i(k)$, and build a cost volume with the <b>variance</b> metric, which is defined for any N:</p>
+$$\mathcal C(k)=\frac1N\sum_{i=0}^{N-1}\big(V_i(k)-\bar V(k)\big)^2,\qquad \bar V(k)=\frac1N\sum_i V_i(k).$$
+<p>A 3-D CNN regularizes $\mathcal C$ into a probability volume $P(k\mid\mathbf p)=\mathrm{softmax}_k(-\tilde{\mathcal C})$, and depth is the differentiable <b>soft-argmin</b> (expectation) $\hat d(\mathbf p)=\sum_k d_k\,P(k\mid\mathbf p)$, trained with an L1 loss against GT depth. The probability mass around $\hat d$ doubles as a confidence for filtering. Note that the variance treats every source alike: an occluded view adds variance at the right depth exactly like an occluded view adds ZNCC cost in the classical mean.</p>
+
+<h3>5.2 What came after, and what each change buys</h3>
+<table>
+<thead><tr><th>Method</th><th>Idea</th><th>Effect</th></tr></thead>
+<tbody>
+<tr><td>R-MVSNet (2019)</td><td>GRU along depth instead of a 3-D CNN</td><td>memory linear in D: high resolution</td></tr>
+<tr><td>CasMVSNet (2020)</td><td>cascade: coarse volume, then narrow volumes around the previous estimate at higher resolution</td><td>the standard coarse-to-fine design; better accuracy and memory</td></tr>
+<tr><td>Vis-MVSNet (2020)</td><td>pairwise cost volumes, a per-pixel visibility (uncertainty) map per source, and visibility-weighted fusion of the pairs</td><td>explicitly down-weights occluded sources — the learned counterpart of COLMAP's view selection</td></tr>
+<tr><td>PatchmatchNet (2021)</td><td>learned PatchMatch: adaptive propagation offsets, adaptive evaluation, group-wise correlation, pixel-wise view weights</td><td>fast and light; runs on modest GPUs</td></tr>
+<tr><td>IterMVS (2022)</td><td>GRU that iteratively updates a hidden state encoding the depth <i>probability</i>, small regression head</td><td>fast, good generalization</td></tr>
+<tr><td>TransMVSNet, MVSFormer(++) (2022–2024)</td><td>transformers for feature matching; MVSFormer brings pre-trained ViT features (DINO), MVSFormer++ tunes the attention details</td><td>state of the art on DTU and Tanks &amp; Temples</td></tr>
+<tr><td>Robust MVD (2022), MVSAnywhere (2025)</td><td>trained for zero-shot generalization across domains and depth scales (MVSAnywhere adds a monocular prior)</td><td>works on data it has never seen, with any depth range</td></tr>
+</tbody></table>
+<p>Two branches are deliberately out of scope here because the cameras are known: pose-free feed-forward 3-D models (DUSt3R, MASt3R, VGGT) and neural rendering (NeRF, Gaussian splatting) are related but answer a different question.</p>
+
+<h3>5.3 Learned two-view stereo, for comparison</h3>
+<p>The stereo networks in the benchmark work on rectified pairs. <b>RAFT-Stereo</b> (2021) builds an all-pairs correlation pyramid along the scanline and refines disparity with recurrent GRU updates; <b>IGEV-Stereo</b> (2023) adds a geometry-encoding volume from a small 3-D CNN to initialize and guide the GRU; <b>FoundationStereo</b> (2025) injects Depth Anything V2 features and is trained on a million synthetic pairs for zero-shot use; <b>MonSter</b> (2025) fuses a monocular depth branch with the stereo branch. The monocular priors are interesting for occlusion: they let a two-view network <i>guess</i> depth where there is no correspondence, which is different from <i>measuring</i> it.</p>
+
+<h2 id="occlusion">6 · Occlusion: the two-view floor and what N views buy</h2>
+<p>Call a reference pixel <b>occluded in source $i$</b> if a closer surface hides its 3-D point from camera $i$, and <b>out of view</b> if it projects outside image $i$. In either case no correspondence exists, and the matching cost at the true depth is just as uninformative as at any other depth. A two-view method can only fill such pixels from priors (smoothness, background extension, a monocular network). With GT depth for every view the labels are exact:</p>
+$$\ell_i(\mathbf p)=\begin{cases}\text{visible}&|z_i-D_i(\mathbf x_i)|\le\tau\,D_i(\mathbf x_i)\\ \text{occluded}&z_i\gt(1+\tau)\,D_i(\mathbf x_i)\\ \text{out of view}&\mathbf x_i\notin\Omega_i\end{cases}\qquad(\mathbf x_i,z_i)=\text{projection of }D_0(\mathbf p)\text{ into }i .$$
+
+<h3>6.1 How much N helps</h3>
+<p>If the views around the reference occluded independently with probability $p$, the chance that <i>no</i> source sees a pixel would be $p^{N-1}$: with $p=0.15$, 15% unmatched pixels for stereo, 2.3% with three sources, 0.05% with five. They are not independent — an occluder casts its "shadow" away from each camera's baseline direction — and this is exactly why MVS benefits from sources on <i>different</i> sides of the reference. A pixel hidden from the camera to the right is usually seen by the camera to the left. The benchmark measures the real fractions: the <i>rescued</i> region (not visible to the stereo partner, visible to at least one other source) and the <i>unseen</i> region (visible to none).</p>
+
+<h3>6.2 Why the aggregation rule matters as much as N</h3>
+<p>Adding views only helps if occluded views are kept out of the decision. Consider a pixel visible in $m$ of $N-1$ sources. At the true depth the visible sources give low costs $c\approx c_\text{true}$ and the occluded ones give arbitrary, typically high costs $c\approx\bar c_\text{rand}$. The <b>mean</b> aggregation is</p>
+$$C_\text{mean}(d^\star)=\frac{m\,c_\text{true}+(N-1-m)\,\bar c_\text{rand}}{N-1},$$
+<p>so the true minimum gets shallower as more of the views are occluded, and a wrong depth where the <i>occluder</i> happens to match can win. The <b>best-K</b> rule of Kang, Szeliski &amp; Chai (2001), $C_K=\frac1K\sum_{\text{K lowest}}c_i$, keeps only the most consistent sources: if $m\ge K$, the occluded views simply never enter the sum. COLMAP's per-pixel visibility inference, ACMH's voting, Vis-MVSNet's visibility weights and PatchmatchNet's pixel-wise view weights are all more refined versions of the same idea. The benchmark runs plane sweep with both the mean and best-K so the effect of the rule is isolated from everything else.</p>
+
+<h3>6.3 What stays hard</h3>
+<ul>
+<li><b>Unseen pixels.</b> Points visible to no source: only priors help (and every method is scored on them anyway, so a network with a good monocular prior can win there).</li>
+<li><b>Thin structures and depth edges.</b> Windows straddle two surfaces; bilateral weights, small windows and slanted planes help.</li>
+<li><b>Textureless and reflective surfaces.</b> Not an occlusion problem, but often the dominant error; planar priors (ACMP) and learned features (MVSFormer, FoundationStereo) target it.</li>
+</ul>
+
+<h2 id="benchmark">7 · The benchmark</h2>
+<h3>7.1 Datasets</h3>
+<table>
+<thead><tr><th>Setting</th><th>Dataset</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td rowspan="3">two-view stereo</td><td>Middlebury MiddEval3 (15 training pairs, half resolution)</td><td>dense indoor GT with non-occlusion masks</td></tr>
+<tr><td>ETH3D two-view (27 pairs)</td><td>indoor/outdoor, laser GT, non-occlusion masks</td></tr>
+<tr><td>KITTI 2015 (200 pairs) · Middlebury 2014 full (23 scenes)</td><td>driving, occluded vs non-occluded GT · both-view GT</td></tr>
+<tr><td rowspan="3">multi-view depth</td><td>DTU (22 test scans, 49 views each, 1600×1200)</td><td>the standard MVS benchmark; GT depth rendered for every view; point-cloud evaluation</td></tr>
+<tr><td>ETH3D high-res (13 scenes, DSLR)</td><td>real indoor/outdoor, laser GT depth per image, wide baselines and heavy occlusion</td></tr>
+<tr><td>BlendedMVS (validation scenes)</td><td>rendered GT depth for every view, varied scale</td></tr>
+</tbody></table>
+<p>A longer catalogue with sizes, licences and the datasets not used (Scene Flow, ScanNet++, Tanks &amp; Temples, Booster, …) is in <a href="https://github.com/nadurthi/computervision/blob/multi-view-stereo/multi-view-stereo/docs/DATASETS.md">docs/DATASETS.md</a>. For ETH3D, the view selection uses MVSNet's score on the released SfM points (a Gaussian on the triangulation angle, peaked at 5°), and the GT depth is undistorted with robustmvd's exact COLMAP-model script.</p>
+
+<h3>7.2 Methods</h3>
+<table>
+<thead><tr><th>Family</th><th>Methods</th></tr></thead>
+<tbody>
+<tr><td>classical stereo</td><td>OpenCV SGBM (raw, and with background hole filling)</td></tr>
+<tr><td>learned stereo</td><td>RAFT-Stereo (Scene Flow, Middlebury weights), IGEV-Stereo (Scene Flow), FoundationStereo (ViT-L), MonSter (Scene Flow, mixed)</td></tr>
+<tr><td>classical MVS</td><td>plane sweep ZNCC (mean, best-K, best-K + SGM), PatchMatch MVS (ours, ~250 lines of PyTorch), COLMAP PatchMatch (photometric + geometric), ACMMP</td></tr>
+<tr><td>learned MVS</td><td>PatchmatchNet, IterMVS (DTU and BlendedMVS weights), Vis-MVSNet, Robust MVD, MVSAnywhere</td></tr>
+<tr><td>stereo inside MVS</td><td>SGBM, RAFT-Stereo, FoundationStereo, IGEV, MonSter run on the reference and its <i>first</i> source, rectified from the known calibration (any baseline direction: the pair is mirrored and/or transposed so the reference is always the left image)</td></tr>
+</tbody></table>
+<p>All weights are the authors' released checkpoints; nothing is fine-tuned on the test data.</p>
+
+<h3>7.3 Protocol and metrics</h3>
+<ul>
+<li>For every reference view and $N\in\{2,3,5,10\}$, each MVS method gets the reference and its $N-1$ best sources. Source #1 is the stereo partner, so $N=2$ is exactly the two-view problem, and the stereo methods see the same pair.</li>
+<li>Every prediction is resized (nearest) to one evaluation grid per dataset and scored against GT depth. A missing prediction counts as an error; density is reported separately.</li>
+<li>Metrics: % of pixels within 1/2/4 mm (DTU) or 2/5/10 cm (ETH3D), inlier ratio $\max(\hat d/d,d/\hat d)\lt1.03$, AbsRel. Stereo: EPE and bad-τ / D1 on all, non-occluded and occluded pixels.</li>
+<li><b>Regions</b>, from GT depth of the reference and all sources: visible in partner · occluded in partner · outside partner · <b>rescued</b> (not visible in partner, visible in another source) · <b>unseen</b> (visible in none).</li>
+<li>DTU point clouds: N=5 for every view, identical geometric-consistency fusion for all methods, scored with a faithful Python port of the official evaluation.</li>
+</ul>
+
+<h2 id="published">8 · Published numbers</h2>
+<p>For context, the methods' own reported results on the official benchmarks (point clouds, each paper's own fusion).</p>
+<h3>DTU (mm, lower is better)</h3>
+<table>
+<thead><tr><th>Method</th><th>Type</th><th>Accuracy</th><th>Completeness</th><th>Overall</th></tr></thead>
+<tbody>
+<tr><td>Gipuma</td><td>classical</td><td>0.283</td><td>0.873</td><td>0.578</td></tr>
+<tr><td>COLMAP</td><td>classical</td><td>0.400</td><td>0.664</td><td>0.532</td></tr>
+<tr><td>MVSNet</td><td>learned</td><td>0.396</td><td>0.527</td><td>0.462</td></tr>
+<tr><td>CasMVSNet</td><td>learned</td><td>0.325</td><td>0.385</td><td>0.355</td></tr>
+<tr><td>Vis-MVSNet</td><td>learned</td><td>0.369</td><td>0.361</td><td>0.365</td></tr>
+<tr><td>PatchmatchNet</td><td>learned</td><td>0.427</td><td>0.277</td><td>0.352</td></tr>
+<tr><td>IterMVS</td><td>learned</td><td>0.373</td><td>0.354</td><td>0.363</td></tr>
+<tr><td>GeoMVSNet</td><td>learned</td><td>0.331</td><td>0.259</td><td>0.295</td></tr>
+<tr><td>MVSFormer++</td><td>learned</td><td>0.309</td><td>0.252</td><td>0.281</td></tr>
+</tbody></table>
+<p class="footnote">From the survey of <a href="https://arxiv.org/abs/2408.15235">Wang et al. 2024 (Table 3)</a> and the <a href="https://arxiv.org/abs/2401.11673">MVSFormer++ paper</a> (Gipuma, COLMAP, MVSFormer++ rows).</p>
+<p>The pattern is consistent: classical methods are <i>accurate</i> (Gipuma has the best accuracy in the table) but <i>incomplete</i>; learned methods fill in much more of the surface. On DTU, the controlled studio data the networks are trained on, learned MVS wins overall by a wide margin.</p>
+<h3>ETH3D high-res (F1 at 2 cm, %, higher is better)</h3>
+<table>
+<thead><tr><th>Method</th><th>Type</th><th>Train F1</th><th>Test F1</th></tr></thead>
+<tbody>
+<tr><td>COLMAP</td><td>classical</td><td>67.66</td><td>73.01</td></tr>
+<tr><td>ACMM</td><td>classical</td><td>78.86</td><td>80.78</td></tr>
+<tr><td>ACMP</td><td>classical</td><td>79.79</td><td>81.51</td></tr>
+<tr><td>ACMMP</td><td>classical</td><td>83.42</td><td>85.89</td></tr>
+<tr><td>PatchmatchNet</td><td>learned</td><td>64.21</td><td>73.12</td></tr>
+<tr><td>IterMVS</td><td>learned</td><td>66.36</td><td>74.29</td></tr>
+</tbody></table>
+<p class="footnote">From <a href="https://arxiv.org/abs/2303.09758">HPM-MVS (Ren et al. 2023), Table 1</a>. IterMVS's own paper reports a higher test score for its ETH3D configuration (about 80, also listed in the survey above); the table keeps one source for consistency.</p>
+<p>On ETH3D the picture flips: large real scenes, wide baselines, textureless walls and lots of occlusion, and the best classical PatchMatch (ACMMP) beats the DTU-era networks by more than ten F1 points. Generalization, not raw matching quality, is the learned methods' weak spot — which is what the zero-shot models (Robust MVD, MVSAnywhere) and the foundation-feature models were built to fix.</p>
+<h3>Two-view stereo, zero-shot (lower is better)</h3>
+<table>
+<thead><tr><th>Method (trained on Scene Flow only)</th><th>Middlebury bad-2</th><th>ETH3D bad-1</th><th>KITTI-15 D1</th></tr></thead>
+<tbody>
+<tr><td>RAFT-Stereo</td><td>12.6</td><td>3.3</td><td>5.5</td></tr>
+<tr><td>IGEV-Stereo</td><td>8.8</td><td>4.0</td><td>5.7</td></tr>
+<tr><td>FoundationStereo (Scene Flow only)</td><td>5.5</td><td>1.8</td><td>4.9</td></tr>
+<tr><td>FoundationStereo (full training, excl. targets)</td><td>1.1</td><td>0.5</td><td>2.8</td></tr>
+</tbody></table>
+<p class="footnote">From the <a href="https://arxiv.org/abs/2501.09898">FoundationStereo paper, Table 2</a>.</p>
+
+<h2 id="results">9 · Results</h2>
+<div class="callout warn"><b>Pending the GPU run.</b> This section is generated from <code>results/RESULTS.md</code> and the figures in <code>results/figures/</code> once the AWS run finishes: stereo error inside vs outside occlusions per dataset, MVS accuracy per region at N=5, accuracy on partner-occluded pixels vs N for every method, DTU point-cloud scores, runtime, and qualitative error maps.</div>
+<h3>Sanity check on a synthetic scene (CPU)</h3>
+<p>Before any GPU time, <code>scripts/smoke_test.py</code> ray-traces a textured wall, a tilted floor and a box in front of the wall (exact depth for every view), with sources to the right, left, above and below the reference. Inlier ratio ($\lt$3% depth error) on all pixels and on the 3.4% of pixels the right-hand source cannot see:</p>
+<table>
+<thead><tr><th>Method</th><th>Views</th><th>All pixels</th><th>Occluded in partner</th></tr></thead>
+<tbody>
+<tr><td>plane sweep, mean</td><td>2</td><td>71.7%</td><td>10.7%</td></tr>
+<tr><td>plane sweep, mean</td><td>5</td><td>76.8%</td><td>44.2%</td></tr>
+<tr><td>plane sweep, best-2</td><td>5</td><td>76.3%</td><td>44.2%</td></tr>
+<tr><td>plane sweep, best-2 + SGM</td><td>5</td><td>76.5%</td><td>44.8%</td></tr>
+<tr><td>PatchMatch MVS (3 iterations)</td><td>5</td><td>76.3%</td><td>46.2%</td></tr>
+</tbody></table>
+<p>The occlusion effect is already unmistakable: on pixels the stereo partner cannot see, going from 2 to 5 views raises the inlier ratio fourfold, while the score on all pixels moves by five points (the floor at grazing angle dominates the rest of the error). On this toy scene almost every partner-occluded pixel is visible in three other views, so mean and best-K tie; the real datasets, where only one or two sources may see a pixel, are where the aggregation rule should separate. The same test verifies the calibrated rectification used to run stereo networks inside MVS: a GT disparity round trip reproduces the reference depth on 99% of pixels for sources to the right, left, above and below.</p>
+
+<h2 id="reproduce">10 · Reproduce</h2>
+<pre><code>git clone -b multi-view-stereo https://github.com/nadurthi/computervision
+cd computervision/multi-view-stereo/aws
+./launch_mvs_ec2.sh quota                  # needs 8 vCPUs of "Running On-Demand G and VT instances"
+./launch_mvs_ec2.sh launch                 # g6.2xlarge (L4): envs, 11 model repos, weights, datasets, benchmark
+./launch_mvs_ec2.sh status                 # progress via SSM
+./launch_mvs_ec2.sh fetch ./mvs_results    # RESULTS.md, summary.json, figures
+PROFILE=full ./launch_mvs_ec2.sh rerun     # everything, resumes where it stopped</code></pre>
+<p>The instance stops itself when the run ends, after 20 idle minutes, or after 8 hours; datasets and Google-Drive weights are mirrored to a private S3 bucket after their first download. On your own GPU machine: <code>setup/install_models.sh</code>, <code>setup/download_datasets.sh … quick</code>, <code>scripts/run_all.sh quick …</code>. A quick run is about 3–5 hours including setup.</p>
+
+<p class="footnote">Datasets: DTU MVS (Aanæs et al.), ETH3D (Schöps et al.), Middlebury (Scharstein et al.), KITTI 2015 (Menze &amp; Geiger), BlendedMVS (Yao et al.). Methods' code and weights belong to their authors and are downloaded from the official repositories. Related: <a href="/tutorials/algorithms/stereo/">Stereo &amp; disparity</a> · <a href="/tutorials/algorithms/bundle-adjustment/">Bundle adjustment</a> · <a href="/tutorials/applications/carton-wall-perception/">Unloading a box wall</a> · <a href="/tutorials/applications/">back to Applications</a>.</p>
+
+</div></div>
+<!-- /wp:html -->
