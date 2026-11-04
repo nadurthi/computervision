@@ -1,0 +1,7 @@
+# core (classical methods, evaluation, report); the GPU environments are built by setup/install_models.sh
+numpy<2
+opencv-python-headless
+torch
+pyyaml
+matplotlib
+scipy

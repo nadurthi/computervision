@@ -1,0 +1,39 @@
+# Full profile: all scenes, denser reference sampling, DTU point-cloud evaluation. Plan ~8-12 GPU hours;
+# the run resumes where it stopped, so split it over several sessions (each session stops at MAX_HOURS).
+stereo:
+  datasets:
+    middeval3: {limit: null}
+    eth3d_two_view: {limit: null}
+    kitti2015: {limit: null}
+    middlebury2014: {limit: null}
+  methods: [sgbm, sgbm_fill, raft_stereo_sceneflow, raft_stereo_middlebury, igev_stereo_sceneflow,
+            foundation_stereo, monster_sceneflow, monster_mix_all]
+
+mvs:
+  nviews: [2, 3, 5, 7, 10]
+  datasets:
+    dtu:
+      scans: null                  # all 22 evaluation scans that have GT depth
+      ref_stride: 2
+      work_wh: [800, 600]
+      learned_wh: [1600, 1200]
+      eval_wh: [800, 600]
+    eth3d:
+      scenes: null                 # all 13 high-res training scenes
+      refs_per_scene: 12
+      work_wh: [1152, 768]
+      learned_wh: [1152, 768]
+      eval_wh: [1152, 768]
+    blendedmvs:
+      scenes: null                 # validation_list.txt
+      refs_per_scene: 10
+      work_wh: [768, 576]
+      learned_wh: [768, 576]
+      eval_wh: [768, 576]
+  methods: [planesweep_mean, planesweep_bestk, planesweep_bestk_sgm, patchmatch, acmmp, colmap,
+            patchmatchnet, itermvs_dtu, itermvs_blendedmvs, mvsanywhere, vis_mvsnet, robust_mvd,
+            stereo_sgbm, stereo_sgbm_fill, stereo_raft_stereo_middlebury, stereo_foundation_stereo,
+            stereo_igev_stereo_sceneflow, stereo_monster_mix_all]
+  save_depth: all
+  pointcloud: true                 # fuse N=5 DTU depth maps of every view and score with DTUeval-python
+  pointcloud_methods: [acmmp, colmap, patchmatch, patchmatchnet, itermvs_dtu, mvsanywhere]

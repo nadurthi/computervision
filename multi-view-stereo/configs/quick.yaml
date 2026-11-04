@@ -1,0 +1,29 @@
+# Quick profile: ~2-3 GPU hours on a g6.2xlarge (L4) for every method. Same protocol as full, fewer samples.
+stereo:
+  datasets:
+    middeval3: {limit: 15}         # all 15 MiddEval3 training pairs (half resolution, "H")
+    eth3d_two_view: {limit: 27}    # all 27 ETH3D low-res two-view training pairs
+    kitti2015: {limit: 40}         # first 40 of 200 KITTI 2015 training pairs
+  methods: [sgbm, sgbm_fill, raft_stereo_sceneflow, raft_stereo_middlebury, igev_stereo_sceneflow,
+            foundation_stereo, monster_sceneflow, monster_mix_all]
+
+mvs:
+  nviews: [2, 3, 5, 10]            # N = reference + (N-1) sources; N=2 is the stereo setting
+  datasets:
+    dtu:
+      scans: [1, 9, 24, 33, 48, 77, 110, 118]
+      ref_stride: 6                # views 0, 6, ..., 48 of each scan
+      work_wh: [800, 600]          # classical methods and stereo networks
+      learned_wh: [1600, 1200]     # learned MVS networks (their native DTU test resolution)
+      eval_wh: [800, 600]          # every prediction is scored on this grid
+    eth3d:
+      scenes: [courtyard, delivery_area, electro, office, pipes, terrains]
+      refs_per_scene: 6
+      work_wh: [1152, 768]
+      learned_wh: [1152, 768]
+      eval_wh: [1152, 768]
+  methods: [planesweep_mean, planesweep_bestk, planesweep_bestk_sgm, patchmatch, acmmp, colmap,
+            patchmatchnet, itermvs_dtu, itermvs_blendedmvs, mvsanywhere, vis_mvsnet, robust_mvd,
+            stereo_sgbm, stereo_sgbm_fill, stereo_raft_stereo_middlebury, stereo_foundation_stereo]
+  save_depth: qualitative          # qualitative = a few reference views per scene; all = every prediction
+  pointcloud: false
