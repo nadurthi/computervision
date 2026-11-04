@@ -15,8 +15,15 @@ python launch_isaac_ec2.py fetch ./results   # latest run from s3://isaac-boxwal
 python launch_isaac_ec2.py cleanup           # terminate + delete role/profile/security group (bucket kept)
 ```
 
-The instance shuts itself down when the run finishes (`--no-auto-stop` to keep it up); it can be restarted and
-re-run with `python launch_isaac_ec2.py launch` then `rerun`. A shell on it: `aws ssm start-session --target <instance-id>`.
+**Automatic stop (always on).** The instance stops itself:
+1. when the run finishes, whether it succeeded or failed (also after `rerun`);
+2. after **20 idle minutes**: no run in progress, GPU below 5 %, CPU load below 1;
+3. after **4 hours** of uptime per boot, whatever is running.
+
+Each Isaac script also has a **90-minute** time limit, after which its container is killed. (2) and (3) run as a
+systemd service, so they cover restarts too. Tune with `--idle-minutes`, `--max-hours`, `--step-timeout`;
+`--no-auto-stop` only skips (1). A stopped instance costs only its disk; `terminate` or `cleanup` removes that.
+A shell on the instance: `aws ssm start-session --target <instance-id>`.
 
 **Before the first launch:** the EC2 quota *Running On-Demand G and VT instances* in us-east-1 must be at least
 8 vCPUs (new accounts have 0; request it in the Service Quotas console).

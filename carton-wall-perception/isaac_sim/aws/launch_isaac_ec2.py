@@ -18,7 +18,11 @@ Uses your normal AWS credentials (profile/env). What `launch` creates, all tagge
 The instance's user data clones github.com/nadurthi/computervision and runs
 carton-wall-perception/isaac_sim/aws/run_on_ec2.sh, which pulls nvcr.io/nvidia/isaac-sim:5.1.0, downloads the
 SimReady assets, runs box_wall_capture.py and unload_cell.py headless and syncs the outputs to the bucket.
-With --auto-stop (default) the instance shuts itself down when the run finishes, so it only bills while working.
+Automatic stop (always on): the instance stops itself (1) when the run finishes, whether it succeeded or failed,
+(2) after 20 idle minutes (no run in progress, GPU < 5 %, low CPU load), and (3) after 4 hours of uptime per
+boot, whatever is running. Each Isaac script also has a 90-minute time limit. (2) and (3) run as a systemd
+service, so they also cover restarts and `rerun`. Tune with --idle-minutes, --max-hours, --step-timeout;
+--no-auto-stop only skips (1).
 
 Cost (us-east-1, Nov 2026): g6.2xlarge on-demand $0.9776/h; 150 GB gp3 about $12/month while the disk exists.
 Needs the EC2 quota "Running On-Demand G and VT instances" >= 8 vCPUs (new accounts have 0; request it in
@@ -101,17 +105,60 @@ def find_instance(states=("pending", "running", "stopping", "stopped")):
     return inst[0] if inst else None
 
 
-def user_data(auto_stop, args_extra):
-    stop = "shutdown -h now" if auto_stop else "true"
+WATCHDOG = r"""#!/bin/bash
+# Stops the instance when it is idle or has run too long. Installed as a systemd service, so it runs on every
+# boot, including restarts and runs started with `rerun`.
+#   idle  = no Isaac run in progress (/run/isaac-busy absent) AND GPU utilisation < 5 % AND 1-min load < 1.0
+#   limit = uptime above MAX_HOURS, whatever is running
+IDLE_MIN=${IDLE_MIN:-20}; MAX_HOURS=${MAX_HOURS:-4}; BUCKET=${BUCKET:-}
+idle=0
+while true; do
+  sleep 60
+  up_h=$(awk '{print int($1/3600)}' /proc/uptime)
+  if [ "$up_h" -ge "$MAX_HOURS" ]; then reason="uptime ${up_h}h >= ${MAX_HOURS}h"; break; fi
+  gpu=$(nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader,nounits 2>/dev/null | head -1); gpu=${gpu:-0}
+  load=$(awk '{print $1}' /proc/loadavg)
+  if [ ! -e /run/isaac-busy ] && [ "$gpu" -lt 5 ] && awk "BEGIN{exit !($load < 1.0)}"; then
+    idle=$((idle + 1))
+  else
+    idle=0
+  fi
+  if [ "$idle" -ge "$IDLE_MIN" ]; then reason="idle for ${IDLE_MIN} min"; break; fi
+done
+echo "$(date -u) watchdog: stopping instance ($reason)" | tee -a /var/log/isaac-run.log
+[ -n "$BUCKET" ] && aws s3 cp /var/log/isaac-run.log "s3://$BUCKET/logs/watchdog-$(date -u +%Y%m%dT%H%M%SZ).log" || true
+shutdown -h now
+"""
+
+
+def user_data(a):
+    """Boot script: install the watchdog service, run the job, stop the instance when it ends (success or failure)."""
+    stop = "shutdown -h now" if a.auto_stop else "echo 'auto-stop after the run disabled: the watchdog still applies'"
     return f"""#!/bin/bash
-exec > >(tee /var/log/isaac-run.log) 2>&1
+exec > >(tee -a /var/log/isaac-run.log) 2>&1
 set -x
 export HOME=/root
+cat > /usr/local/bin/isaac-watchdog.sh <<'WATCHDOG_END'
+{WATCHDOG}WATCHDOG_END
+chmod +x /usr/local/bin/isaac-watchdog.sh
+cat > /etc/systemd/system/isaac-watchdog.service <<'UNIT_END'
+[Unit]
+Description=Stop the instance when Isaac runs are finished, idle or too long
+After=network-online.target
+[Service]
+Environment=IDLE_MIN={a.idle_minutes} MAX_HOURS={a.max_hours} BUCKET={BUCKET}
+ExecStart=/usr/local/bin/isaac-watchdog.sh
+Restart=always
+[Install]
+WantedBy=multi-user.target
+UNIT_END
+systemctl daemon-reload && systemctl enable --now isaac-watchdog.service
+
 for i in $(seq 1 30); do nvidia-smi && break; sleep 10; done          # driver ready
-apt-get install -y -q awscli >/dev/null 2>&1 || true
 git clone --depth 1 {REPO} /opt/isaac/computervision || git -C /opt/isaac/computervision pull --ff-only
-ISAAC_IMAGE={args_extra.get('image', 'nvcr.io/nvidia/isaac-sim:5.1.0')} \\
+ISAAC_IMAGE={a.image} STEP_TIMEOUT={a.step_timeout} \\
   bash /opt/isaac/computervision/carton-wall-perception/isaac_sim/aws/run_on_ec2.sh s3://{BUCKET}/runs
+echo "run exit code: $?"
 aws s3 cp /var/log/isaac-run.log s3://{BUCKET}/logs/user-data-$(date -u +%Y%m%dT%H%M%SZ).log || true
 {stop}
 """
@@ -136,7 +183,7 @@ def launch(a):
                                                     "InstanceInterruptionBehavior": "terminate"}} if a.spot else None
     kw = dict(ImageId=ami, InstanceType=INSTANCE_TYPE, MinCount=1, MaxCount=1,
               IamInstanceProfile={"Name": profile}, SecurityGroupIds=[sg],
-              UserData=user_data(a.auto_stop, {"image": a.image}),
+              UserData=user_data(a),
               InstanceInitiatedShutdownBehavior="stop",
               BlockDeviceMappings=[{"DeviceName": "/dev/sda1",
                                     "Ebs": {"VolumeSize": 150, "VolumeType": "gp3", "DeleteOnTermination": True}}],
@@ -166,7 +213,7 @@ def rerun(a):
     if not inst:
         sys.exit("no running instance")
     cmd = ssm.send_command(InstanceIds=[inst["InstanceId"]], DocumentName="AWS-RunShellScript",
-                           Parameters={"commands": [f"bash /opt/isaac/computervision/carton-wall-perception/isaac_sim/aws/run_on_ec2.sh s3://{BUCKET}/runs"],
+                           Parameters={"commands": [f"bash /opt/isaac/computervision/carton-wall-perception/isaac_sim/aws/run_on_ec2.sh s3://{BUCKET}/runs; shutdown -h now"],
                                        "executionTimeout": ["10800"]})
     print("command", cmd["Command"]["CommandId"])
 
@@ -251,8 +298,12 @@ if __name__ == "__main__":
     sub = ap.add_subparsers(dest="cmd", required=True)
     p = sub.add_parser("launch")
     p.add_argument("--spot", action="store_true", help="spot instance (~20%% cheaper, can be interrupted)")
-    p.add_argument("--no-auto-stop", dest="auto_stop", action="store_false", help="keep running after the run")
+    p.add_argument("--no-auto-stop", dest="auto_stop", action="store_false",
+                   help="do not stop right after the run (the idle/uptime watchdog still applies)")
     p.add_argument("--image", default="nvcr.io/nvidia/isaac-sim:5.1.0")
+    p.add_argument("--idle-minutes", type=int, default=20, help="stop after this many idle minutes (default 20)")
+    p.add_argument("--max-hours", type=int, default=4, help="hard limit on uptime per boot (default 4)")
+    p.add_argument("--step-timeout", default="90m", help="time limit for each Isaac script (default 90m)")
     sub.add_parser("rerun"); sub.add_parser("status"); sub.add_parser("stop"); sub.add_parser("terminate")
     sub.add_parser("cleanup")
     f = sub.add_parser("fetch"); f.add_argument("dest", nargs="?", default="./isaac_results")

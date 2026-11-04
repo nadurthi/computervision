@@ -11,6 +11,11 @@ IMAGE="${ISAAC_IMAGE:-nvcr.io/nvidia/isaac-sim:5.1.0}"
 ROOT=/opt/isaac
 RUN="run-$(date -u +%Y%m%dT%H%M%SZ)"
 OUT="$ROOT/out/$RUN"
+STEP_TIMEOUT="${STEP_TIMEOUT:-90m}"     # hard limit per Isaac script (a hung sim must not keep the GPU billing)
+
+# The idle watchdog (installed by launch_isaac_ec2.py) treats the instance as busy while this marker exists.
+touch /run/isaac-busy
+trap 'rm -f /run/isaac-busy' EXIT
 
 mkdir -p "$ROOT"/cache/{main/ov,main/warp,computecache} "$ROOT"/{config,data/documents,data/Kit,logs,pkg,simready} "$OUT"
 nvidia-smi | tee "$OUT/nvidia-smi.txt"
@@ -30,7 +35,8 @@ chown -R 1234:1234 "$ROOT"     # the container runs as uid 1234
 
 isaac() {   # isaac <log-name> <python args...>
   local name="$1"; shift
-  docker run --rm --gpus all --network=host --entrypoint bash \
+  timeout --kill-after=2m "$STEP_TIMEOUT" \
+  docker run --rm --name "isaac-$name" --gpus all --network=host --entrypoint bash \
     -e "ACCEPT_EULA=Y" -e "PRIVACY_CONSENT=N" -u 1234:1234 \
     -v "$ROOT/cache/main:/isaac-sim/.cache:rw" \
     -v "$ROOT/cache/computecache:/isaac-sim/.nv/ComputeCache:rw" \
@@ -40,6 +46,7 @@ isaac() {   # isaac <log-name> <python args...>
     -v "$ROOT/pkg:/isaac-sim/.local/share/ov/pkg:rw" \
     -v "$CODE:/work:ro" -v "$ROOT/simready:/simready:ro" -v "$OUT:/out:rw" \
     "$IMAGE" -c "cd /isaac-sim && ./python.sh $*" 2>&1 | tee "$OUT/$name.log" || true
+  docker rm -f "isaac-$name" >/dev/null 2>&1 || true   # timeout only kills the client; remove the container too
 }
 
 # 1) box wall in the warehouse: RGB, depth, masks, 2D boxes, lidar
