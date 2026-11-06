@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the stereo / multi-view-stereo benchmark on a GPU EC2 instance in us-east-1 (default g6.2xlarge, NVIDIA L4).
+# Run the stereo / multi-view-stereo benchmark on a GPU EC2 instance in us-east-1 (g6.2xlarge L4, else g5.2xlarge A10G).
 #
 #   ./launch_mvs_ec2.sh quota               # is the G-instance vCPU quota approved yet?
 #   ./launch_mvs_ec2.sh launch              # create role/bucket/security group if needed, start the instance + run
@@ -13,7 +13,8 @@
 #
 # Settings (environment variables):
 #   PROFILE=quick      quick (~3-5 h incl. setup) or full (~10-14 h, resumes across sessions)
-#   INSTANCE_TYPE=g6.2xlarge   any type that fits your G/VT vCPU quota (g6.2xlarge and g6e.2xlarge need 8)
+#   INSTANCE_TYPES="g6.2xlarge g5.2xlarge"   tried in order, in every us-east-1 zone that offers them, until one has
+#                      capacity (g6 = L4 24 GB ~$0.98/h, g5 = A10G 24 GB ~$1.21/h; both need 8 G/VT vCPUs)
 #   IDLE_MIN=20        stop after this many idle minutes (no run in progress, GPU < 5 %, low CPU load)
 #   MAX_HOURS=8        stop after this many hours of uptime per boot, whatever is running
 #   METHOD_TIMEOUT=3h  time limit per method and benchmark
@@ -30,7 +31,7 @@ set -euo pipefail
 
 REGION=us-east-1
 NAME=mvs-bench
-INSTANCE_TYPE=${INSTANCE_TYPE:-g6.2xlarge}
+INSTANCE_TYPES=${INSTANCE_TYPES:-${INSTANCE_TYPE:-g6.2xlarge g5.2xlarge}}
 AMI_PARAM=/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id
 REPO=https://github.com/nadurthi/computervision
 BRANCH=${BRANCH:-multi-view-stereo}
@@ -148,21 +149,40 @@ cmd_launch() {
   ami=$(aws ssm get-parameter --name "$AMI_PARAM" --query Parameter.Value --output text)
   ud=$(user_data_file)
   [ "$SPOT" = "1" ] && market=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=persistent,InstanceInterruptionBehavior=stop}')
-  log "launching $INSTANCE_TYPE from $ami (profile $PROFILE, branch $BRANCH)"
-  for attempt in 1 2 3 4; do
-    if id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$INSTANCE_TYPE" --count 1 \
-        --iam-instance-profile "Name=$NAME" --security-group-ids "$sg" \
-        --user-data "file://$ud" --instance-initiated-shutdown-behavior stop \
-        --metadata-options HttpTokens=required \
-        --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=$DISK_GB,VolumeType=gp3,Throughput=500,Iops=6000,DeleteOnTermination=true}" \
-        --tag-specifications "ResourceType=instance,Tags=[{$TAGS},{Key=Name,Value=$NAME}]" "ResourceType=volume,Tags=[{$TAGS}]" \
-        "${market[@]}" --query 'Instances[0].InstanceId' --output text 2>/tmp/mvs-run-err); then
-      break
-    fi
-    if grep -q "Invalid IAM Instance Profile" /tmp/mvs-run-err && [ $attempt -lt 4 ]; then sleep 10; continue; fi
-    grep -q VcpuLimitExceeded /tmp/mvs-run-err && { log "G/VT vCPU quota in $REGION is too low for $INSTANCE_TYPE:"; cmd_quota >&2; }
-    cat /tmp/mvs-run-err >&2; rm -f "$ud"; exit 1
+  local vpc; vpc=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+  id=""
+  for itype in $INSTANCE_TYPES; do
+    for az in $(aws ec2 describe-instance-type-offerings --location-type availability-zone \
+                  --filters "Name=instance-type,Values=$itype" --query 'InstanceTypeOfferings[].Location' --output text | tr '\t' '\n' | sort); do
+      local subnet
+      subnet=$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc" "Name=availability-zone,Values=$az" \
+               "Name=default-for-az,Values=true" --query 'Subnets[0].SubnetId' --output text)
+      [ "$subnet" = "None" ] && continue
+      log "trying $itype in $az (profile $PROFILE, branch $BRANCH, $ami)"
+      for attempt in 1 2 3 4; do
+        if id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$itype" --count 1 \
+            --iam-instance-profile "Name=$NAME" \
+            --network-interfaces "DeviceIndex=0,SubnetId=$subnet,Groups=$sg,AssociatePublicIpAddress=true" \
+            --user-data "file://$ud" --instance-initiated-shutdown-behavior stop \
+            --metadata-options HttpTokens=required \
+            --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=$DISK_GB,VolumeType=gp3,Throughput=500,Iops=6000,DeleteOnTermination=true}" \
+            --tag-specifications "ResourceType=instance,Tags=[{$TAGS},{Key=Name,Value=$NAME}]" "ResourceType=volume,Tags=[{$TAGS}]" \
+            "${market[@]}" --query 'Instances[0].InstanceId' --output text 2>/tmp/mvs-run-err); then
+          log "launched $itype in $az"
+          break 3
+        fi
+        id=""
+        if grep -q "Invalid IAM Instance Profile" /tmp/mvs-run-err && [ $attempt -lt 4 ]; then sleep 10; continue; fi
+        break
+      done
+      if grep -qE "InsufficientInstanceCapacity|Unsupported" /tmp/mvs-run-err; then
+        log "no $itype capacity in $az"; continue
+      fi
+      grep -q VcpuLimitExceeded /tmp/mvs-run-err && { log "G/VT vCPU quota in $REGION is too low for $itype:"; cmd_quota >&2; }
+      cat /tmp/mvs-run-err >&2; rm -f "$ud"; exit 1
+    done
   done
+  if [ -z "$id" ]; then log "no capacity for any of: $INSTANCE_TYPES (try later, or SPOT=1)"; rm -f "$ud"; exit 1; fi
   rm -f "$ud"
   log "launched $id. Auto-stop: after the run, after ${IDLE_MIN} idle min, or after ${MAX_HOURS} h."
   log "progress: $0 status    shell: $0 shell"

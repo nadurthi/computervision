@@ -20,7 +20,9 @@ PROFILE=full ./launch_mvs_ec2.sh rerun     # later: same disk (envs + data kept)
 What `launch` creates (tagged `Project=mvs-bench`): IAM role + instance profile `mvs-bench` (SSM + read/write on the
 bucket only), private bucket `mvs-bench-<account>-us-east-1` (`cache/` = mirrored datasets and weights,
 `results/<profile>/`, `logs/`), a security group with **no inbound rules**, and a **g6.2xlarge** (L4 24 GB, 8 vCPU,
-32 GB RAM) from the Deep Learning Base OSS NVIDIA Driver AMI (Ubuntu 22.04) with a 500 GB gp3 disk.
+32 GB RAM) from the Deep Learning Base OSS NVIDIA Driver AMI (Ubuntu 22.04) with a 500 GB gp3 disk. If no zone has
+g6.2xlarge capacity, it tries every zone again with **g5.2xlarge** (A10G 24 GB, ~$1.21/h); set `INSTANCE_TYPES` to
+change the order.
 
 ## Automatic stop (always on)
 
