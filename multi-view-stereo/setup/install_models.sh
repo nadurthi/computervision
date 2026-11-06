@@ -32,6 +32,7 @@ if ! dpkg -s libopencv-dev p7zip-full >/dev/null 2>&1; then
     git wget curl >/dev/null
 fi
 command -v uv >/dev/null || curl -LsSf https://astral.sh/uv/install.sh | sh
+mkdir -p "$HOME/.local/bin"
 command -v micromamba >/dev/null || (curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | \
   tar -xvj -C "$HOME/.local" bin/micromamba >/dev/null)
 
