@@ -48,6 +48,7 @@ ap.add_argument("--picks", type=int, default=0, help="stop after this many picks
 ap.add_argument("--move-time", type=float, default=1.2, help="seconds per arm segment (joint interpolation)")
 ap.add_argument("--record", default=None, help="folder: save camera RGB/depth/instance + lidar before every pick")
 ap.add_argument("--lidar-config", default="Example_Rotary")
+ap.add_argument("--stable-ids", action="store_true", help="RTX stable ids (per-point lidar object ids)")
 args, _ = ap.parse_known_args()
 
 try:
@@ -55,7 +56,7 @@ try:
 except ImportError:
     from omni.isaac.kit import SimulationApp
 simulation_app = SimulationApp({"headless": not args.gui, "width": 1280, "height": 720,
-                                "extra_args": ["--/rtx-transient/stableIds/enabled=true"]})
+                                "extra_args": ["--/rtx-transient/stableIds/enabled=true"] if args.stable_ids else []})
 
 import numpy as np                                                    # noqa: E402
 import omni.client                                                    # noqa: E402

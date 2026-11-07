@@ -55,6 +55,8 @@ ap.add_argument("--res", type=int, nargs=2, default=[1280, 720])
 ap.add_argument("--lidar-config", default="Example_Rotary",
                 help="RTX lidar config, e.g. Example_Rotary, Example_Solid_State, HESAI_XT32_SD10, OS1_REV6_128ch10hz1024res")
 ap.add_argument("--no-lidar", action="store_true")
+ap.add_argument("--stable-ids", action="store_true",
+                help="RTX stable ids: per-point lidar object ids (crashed the 5.1 container on an L4 in testing)")
 ap.add_argument("--env", choices=["warehouse", "slabs"], default="warehouse",
                 help="warehouse: NVIDIA's ready-made warehouse (floor, walls, racks, fixtures); slabs: plain floor + wall")
 ap.add_argument("--env-usd", default="/Isaac/Environments/Simple_Warehouse/full_warehouse.usd",
@@ -78,8 +80,8 @@ simulation_app = SimulationApp({
     "headless": not args.gui,
     "width": args.res[0],
     "height": args.res[1],
-    # stable ids let the lidar return per-point object ids
-    "extra_args": ["--/rtx-transient/stableIds/enabled=true"],
+    # stable ids let the lidar return per-point object ids (opt-in: --stable-ids)
+    "extra_args": ["--/rtx-transient/stableIds/enabled=true"] if args.stable_ids else [],
 })
 
 import numpy as np                                      # noqa: E402  (after SimulationApp)
