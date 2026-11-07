@@ -160,7 +160,7 @@ cmd_launch() {
   log "launching $INSTANCE_TYPE$([ "$SPOT" = "1" ] && echo ' (spot)') from $ami"
   id=""
   for subnet in $subnets; do
-    for attempt in 1 2 3 4; do
+    for attempt in 1 2 3 4 5 6 7 8 9 10; do
       if id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$INSTANCE_TYPE" --count 1 \
           --subnet-id "$subnet" --iam-instance-profile "Name=$NAME" --security-group-ids "$sg" \
           --user-data "file://$ud" --instance-initiated-shutdown-behavior "$shutdown_behavior" \
@@ -171,7 +171,9 @@ cmd_launch() {
         break 2
       fi
       id=""
-      if grep -q "Invalid IAM Instance Profile" /tmp/isaac-run-err && [ $attempt -lt 4 ]; then sleep 10; continue; fi
+      if grep -q "Invalid IAM Instance Profile" /tmp/isaac-run-err && [ $attempt -lt 10 ]; then sleep 10; continue; fi
+      # a just-terminated spot instance keeps counting against the spot quota for a minute or two
+      if grep -q "MaxSpotInstanceCountExceeded" /tmp/isaac-run-err && [ $attempt -lt 10 ]; then log "spot quota still held by a terminating instance; retrying in 30 s"; sleep 30; continue; fi
       if grep -q "InsufficientInstanceCapacity" /tmp/isaac-run-err; then log "no capacity in $subnet, trying the next zone"; break; fi
       grep -q VcpuLimitExceeded /tmp/isaac-run-err && log "EC2 GPU quota (G and VT, $([ "$SPOT" = "1" ] && echo spot || echo on-demand)) too low in $REGION: other GPU instances may be using it"
       cat /tmp/isaac-run-err >&2; rm -f "$ud"; exit 1

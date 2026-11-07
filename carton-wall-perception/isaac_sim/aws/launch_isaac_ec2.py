@@ -179,12 +179,16 @@ def launch(a):
     iid = None
     for az, subnet in subnets:
         kw["SubnetId"] = subnet
-        for attempt in range(4):
+        for attempt in range(10):
             try:
                 iid = ec2.run_instances(**kw)["Instances"][0]["InstanceId"]
                 break
             except ClientError as e:
-                if "Invalid IAM Instance Profile" in str(e) and attempt < 3:
+                if "MaxSpotInstanceCountExceeded" in str(e) and attempt < 9:   # quota still held by a terminating spot instance
+                    print("spot quota still held by a terminating instance; retrying in 30 s")
+                    time.sleep(30)
+                    continue
+                if "Invalid IAM Instance Profile" in str(e) and attempt < 9:
                     time.sleep(10)
                     continue
                 if "InsufficientInstanceCapacity" in str(e):
