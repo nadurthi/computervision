@@ -1,5 +1,8 @@
 # Run the Isaac Sim scripts on AWS (g6.2xlarge, us-east-1)
 
+The actual run is `../run_all.sh`, which works on any Linux machine with an NVIDIA RTX GPU (see the main README).
+These scripts only start a GPU instance, call that same script there, and copy its output folder to S3.
+
 Two equivalent launchers. Use whichever you prefer; both create the same resources and use the same on-instance
 scripts, so you can launch with one and rerun with the other.
 
@@ -9,7 +12,7 @@ scripts, so you can launch with one and rerun with the other.
 | `launch_isaac_ec2.py` | same (`pip install boto3`) | the same commands in Python |
 | `bootstrap.sh` | on the instance | installs the auto-stop watchdog service, waits for the GPU driver, runs `run_on_ec2.sh`, stops the instance |
 | `isaac-watchdog.sh` | on the instance (systemd service) | stops the instance when idle or after the uptime limit, on every boot |
-| `run_on_ec2.sh` | on the instance | downloads the NVIDIA SimReady assets, pulls `nvcr.io/nvidia/isaac-sim:5.1.0`, runs `box_wall_capture.py` and `unload_cell.py` headless in the container, syncs outputs and logs to S3 |
+| `run_on_ec2.sh` | on the instance | thin wrapper: pulls the latest code, runs `../run_all.sh` (the same script you run locally: assets, Docker image, smoke/lidar tests, both Isaac scripts, `report.html`), syncs the run folder to S3 |
 
 ```bash
 ./launch_isaac_ec2.sh launch              # first session (~30-60 min: image pull + shader cache)

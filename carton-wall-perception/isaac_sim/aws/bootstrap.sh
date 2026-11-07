@@ -2,7 +2,7 @@
 # Runs on the EC2 instance at first boot (called from the user data written by launch_isaac_ec2.sh / .py):
 #   1. installs the isaac-watchdog systemd service (idle / max-uptime stop, active on every boot)
 #   2. waits for the NVIDIA driver
-#   3. runs run_on_ec2.sh (container pull, assets, both Isaac scripts, S3 sync)
+#   3. runs run_on_ec2.sh, which runs ../run_all.sh (the same script you run locally) and syncs to S3
 #   4. uploads the boot log and stops the instance, whether the run succeeded or failed (unless AUTO_STOP=0)
 #
 # Settings come from the environment: BUCKET, IDLE_MIN, MAX_HOURS, STEP_TIMEOUT, ISAAC_IMAGE, AUTO_STOP.

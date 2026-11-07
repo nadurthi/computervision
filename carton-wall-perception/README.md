@@ -157,6 +157,18 @@ lidar point cloud (plus per-point object ids where supported) and per-box ground
 ./python.sh isaac_sim/box_wall_capture.py --gui --settle                          # watch it, let boxes settle under gravity
 ```
 
+### Run everything on your own machine
+
+[`isaac_sim/run_all.sh`](isaac_sim/run_all.sh) runs all Isaac Sim scripts and builds an HTML report; it needs only
+a Linux machine with an NVIDIA RTX GPU (driver 580 for Isaac Sim 5.1) and Docker with the NVIDIA Container Toolkit,
+or a local Isaac Sim install (`MODE=native ISAAC_SIM_PATH=...`). The AWS scripts in `isaac_sim/aws/` call this same file.
+
+```bash
+bash isaac_sim/run_all.sh                       # -> ./isaac_runs/run-<time>/report.html
+RUN_SCRIPTS=0 bash isaac_sim/run_all.sh         # smoke + lidar tests only
+python3 isaac_sim/make_report.py <run folder>   # rebuild the report for any run folder
+```
+
 ### Unloading cell (robot + conveyor)
 
 [`isaac_sim/unload_cell.py`](isaac_sim/unload_cell.py): a UR10 with a suction gripper on a pedestal inside a trailer
