@@ -209,8 +209,11 @@ def procedural_box(stage, path, size, card, tape):
 def referenced_box(stage, path, url, size):
     """Reference a box USD and scale it so its bounding box is exactly `size`, bottom-centre at the origin."""
     fit = UsdGeom.Xform.Define(stage, path + "/fit")
-    UsdGeom.Xform.Define(stage, path + "/fit/asset").GetPrim().GetReferences().AddReference(url)
-    r = bounds(fit.GetPrim())
+    asset = UsdGeom.Xform.Define(stage, path + "/fit/asset").GetPrim()
+    asset.GetReferences().AddReference(url)
+    # bounds in the fit prim's own frame (the box's pose prim above is already placed and rotated)
+    cache = UsdGeom.BBoxCache(Usd.TimeCode.Default(), [UsdGeom.Tokens.default_, UsdGeom.Tokens.render])
+    r = cache.ComputeRelativeBound(asset, fit.GetPrim()).ComputeAlignedRange()
     ext, ctr = np.array(r.GetSize()), np.array(r.GetMidpoint())
     if np.any(ext <= 1e-6):
         raise RuntimeError("empty bounds")
@@ -314,7 +317,11 @@ def build_wall(stage):
         b["prim"], b["model"] = path, used
     if boxes:                                                   # sanity check: the first box's world bounds
         r = bounds(stage.GetPrimAtPath(boxes[0]["prim"]))
-        print(f"[trailer] {boxes[0]['prim']} ({boxes[0]['model']}) world bounds {list(r.GetMin())} .. {list(r.GetMax())}")
+        mid, plan = np.array(r.GetMidpoint()), np.array(boxes[0]["center_m"])
+        print(f"[trailer] {boxes[0]['prim']} ({boxes[0]['model']}) centre {np.round(mid, 3).tolist()}, "
+              f"planned {np.round(plan, 3).tolist()}, size {np.round(np.array(r.GetSize()), 3).tolist()}")
+        if np.linalg.norm(mid - plan) > 0.05:
+            print("[trailer] WARNING: first box is not where it was planned")
     fronts = [b["front_face_x_m"] for b in boxes]
     print(f"[trailer] {len(boxes)} boxes in {args.rows} rows; front faces spread over "
           f"{100 * (max(fronts) - min(fronts)):.1f} cm; yaw within +/-{args.yaw} deg")
