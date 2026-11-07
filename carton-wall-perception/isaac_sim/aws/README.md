@@ -13,6 +13,7 @@ scripts, so you can launch with one and rerun with the other.
 | `bootstrap.sh` | on the instance | installs the auto-stop watchdog service, waits for the GPU driver, runs `run_on_ec2.sh`, shuts the instance down (which terminates it) |
 | `isaac-watchdog.sh` | on the instance (systemd service) | stops the instance when idle or after the uptime limit, on every boot |
 | `run_on_ec2.sh` | on the instance | thin wrapper: pulls the latest code, runs `../run_all.sh` (the same script you run locally: assets, Docker image, smoke/lidar tests, both Isaac scripts, `report.html`), syncs the run folder to S3 |
+| `s3_cache.sh` | on the instance | caches the Isaac image, SimReady models and shader caches in `s3://<bucket>/cache/` so a fresh instance does not rebuild them |
 
 ```bash
 ./launch_isaac_ec2.sh launch              # first session (~30-60 min: image pull + shader cache)
@@ -36,7 +37,16 @@ security group with **no inbound rules** (a shell is `aws ssm start-session --ta
 S3 is the only persistent storage. Every shutdown, whatever the cause, **terminates** the instance and deletes
 its disk, so no EBS volume or stopped instance is ever left behind. Results, logs and `report.html` are in
 `s3://isaac-boxwall-<account>-us-east-1/runs/<run>/`. The price is that each session pulls the Isaac Sim image
-and compiles shaders again (about 10 extra minutes).
+and compiles shaders again. To avoid that, `s3_cache.sh` keeps a cache in the bucket:
+
+| `s3://<bucket>/cache/` | content | written |
+|---|---|---|
+| `isaac-image-<tag>.tar.zst` | the Isaac Sim Docker image (`docker save`, zstd) | once per image tag |
+| `data-cache.tar.zst` | `run_all.sh`'s DATA folder: SimReady models, Isaac shader/material/Kit caches | when missing or grown by > 5 % |
+
+The first run after a change fills the cache (a few extra minutes of upload); later runs restore it instead of
+pulling from NVIDIA and Hugging Face and compiling shaders. `NO_CACHE=1` skips the cache; `CACHE_REFRESH=1`
+rewrites it. Storage is roughly 25 GB, about $0.60/month.
 
 ## Automatic stop (always on, every session)
 
