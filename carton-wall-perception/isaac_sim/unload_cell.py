@@ -560,7 +560,7 @@ def make_sensors(stage_):
                                              config=args.lidar_config, translation=Gf.Vec3d(-0.6, 0.0, 2.4),
                                              orientation=Gf.Quatd(1, 0, 0, 0))
         lrp = rep.create.render_product(lidar.GetPath(), [1, 1])
-        la = rep.AnnotatorRegistry.get_annotator("IsaacCreateRTXLidarScanBuffer")
+        la = rep.AnnotatorRegistry.get_annotator("IsaacExtractRTXSensorPointCloudNoAccumulator")  # per-frame cloud (see lidar_test.py)
         la.attach([lrp.path])
         anns["lidar"] = la
     except Exception as e:

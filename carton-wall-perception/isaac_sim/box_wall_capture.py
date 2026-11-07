@@ -417,13 +417,12 @@ def make_lidar():
         orientation=Gf.Quatd(1.0, 0.0, 0.0, 0.0),
     )
     rp = rep.create.render_product(sensor.GetPath(), [1, 1], name="LidarRP")
-    ann = rep.AnnotatorRegistry.get_annotator("IsaacCreateRTXLidarScanBuffer")
-    try:   # optional outputs; flags must be set before attach. objectId needs stableIds (set at startup).
-        ann.initialize(outputObjectId=True, outputDistance=True, outputIntensity=True)
-    except Exception as e:
-        print("[box-wall] lidar annotator extra outputs not available:", e)
+    # Per-frame point cloud. In Isaac Sim 5.1 the accumulating IsaacCreateRTXLidarScanBuffer returned 0 points
+    # in a plain standalone loop, while this one returned ~29k (see lidar_test.py). Points are in the sensor frame.
+    ann = rep.AnnotatorRegistry.get_annotator("IsaacExtractRTXSensorPointCloudNoAccumulator")
     ann.attach([rp.path])
-    return ann, {"prim": str(sensor.GetPath()), "config": args.lidar_config, "position_m": list(pos)}
+    return ann, {"prim": str(sensor.GetPath()), "config": args.lidar_config, "position_m": list(pos),
+                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "points_frame": "sensor"}
 
 
 def write_ply(path, pts):
