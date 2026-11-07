@@ -31,6 +31,19 @@ df -h "$ROOT" | tail -1
 
 stamp "benchmark ($PROFILE)"
 OUT="$ROOT/results/$PROFILE"
+# RESET="m1 m2" (or RESET=all) discards those methods' earlier results, locally and in S3, so they are recomputed
+for m in ${RESET:-}; do
+  if [ "$m" = all ]; then
+    rm -rf "$OUT"; aws s3 rm "s3://$BUCKET/results/$PROFILE" --recursive --only-show-errors || true
+    echo "[reset] all results of profile $PROFILE"; break
+  fi
+  for kind in mvs stereo pointcloud; do
+    rm -rf "$OUT/$kind/$m.jsonl" "$OUT/$kind/depth/$m" "$OUT/$kind/disp/$m" "$OUT/logs/${kind}_$m.log"
+    aws s3 rm "s3://$BUCKET/results/$PROFILE/$kind/$m.jsonl" --only-show-errors 2>/dev/null || true
+    aws s3 rm "s3://$BUCKET/results/$PROFILE/logs/${kind}_$m.log" --only-show-errors 2>/dev/null || true
+  done
+  echo "[reset] $m"
+done
 # continue from results synced by an earlier instance (e.g. after a terminate) before resuming
 aws s3 sync "s3://$BUCKET/results/$PROFILE" "$OUT" --only-show-errors || true
 bash "$CODE/scripts/run_all.sh" "$PROFILE" "$ROOT/data" "$ROOT/models" "$OUT" "s3://$BUCKET/results/$PROFILE"

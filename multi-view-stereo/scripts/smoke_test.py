@@ -100,6 +100,17 @@ def main():
     R = sources["far_right"][:3, :3] @ look([0, 0, 0], 0.4, -0.3)[:3, :3]
     check("rotmat2qvec round trip", np.allclose(qvec2rotmat(rotmat2qvec(R)), R, atol=1e-8))
 
+    # 2b) MVSNet cam files: "min interval" (MVSNet) and "min max" (PatchmatchNet/IterMVS DTU cams_1)
+    import tempfile
+    from mvsbench.io import read_mvsnet_cam
+    for line, want in (("425.0 2.5", (425.0, 425.0 + 2.5 * 191)), ("425.0 935.0", (425.0, 935.0)),
+                       ("425.0 2.5 192 935.0", (425.0, 935.0))):
+        with tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False) as f:
+            f.write("extrinsic\n" + "1 0 0 0\n0 1 0 0\n0 0 1 0\n0 0 0 1\n\nintrinsic\n1 0 0\n0 1 0\n0 0 1\n\n" + line + "\n")
+        _, _, dmin, dmax, _ = read_mvsnet_cam(f.name)
+        os.unlink(f.name)
+        check(f"cam depth range '{line}'", abs(dmin - want[0]) < 1e-6 and abs(dmax - want[1]) < 1e-6, f"{dmin}, {dmax}")
+
     # 3) rectification + SGBM -> reference depth, for every baseline direction
     from mvsbench.stereo.sgbm import SGBM
     from mvsbench.mvs.stereo_as_mvs import StereoAsMVS

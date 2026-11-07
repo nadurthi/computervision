@@ -19,6 +19,8 @@
 #   IDLE_MIN=20        stop after this many idle minutes (no run in progress, GPU < 5 %, low CPU load)
 #   MAX_HOURS=8        stop after this many hours of uptime per boot, whatever is running
 #   METHOD_TIMEOUT=3h  time limit per method and benchmark
+#   METHODS="a b"    run only these methods; ONLY=mvs|stereo|pointcloud runs one benchmark
+#   RESET="a b"      (rerun) discard these methods' earlier results first, locally and in S3; RESET=all for everything
 #   AUTO_STOP=1        stop right after the run finishes, success or failure (0 = leave it to the watchdog)
 #   SPOT=0             1 = spot instance (cheaper, can be interrupted; the run resumes on rerun)
 #   BRANCH=multi-view-stereo   branch of github.com/nadurthi/computervision to run
@@ -57,7 +59,7 @@ instance_id() {   # instance_id [states] -> id of our instance or empty
 }
 
 env_line() {      # settings passed to bootstrap.sh on the instance
-  echo "BUCKET=$BUCKET PROFILE=$PROFILE IDLE_MIN=$IDLE_MIN MAX_HOURS=$MAX_HOURS METHOD_TIMEOUT=$METHOD_TIMEOUT AUTO_STOP=$AUTO_STOP BRANCH=$BRANCH ${METHODS:+METHODS=\"$METHODS\"} ${ONLY:+ONLY=$ONLY}"
+  echo "BUCKET=$BUCKET PROFILE=$PROFILE IDLE_MIN=$IDLE_MIN MAX_HOURS=$MAX_HOURS METHOD_TIMEOUT=$METHOD_TIMEOUT AUTO_STOP=$AUTO_STOP BRANCH=$BRANCH ${METHODS:+METHODS=\"$METHODS\"} ${ONLY:+ONLY=$ONLY} ${RESET:+RESET=\"$RESET\"}"
 }
 
 # ------------------------------------------------------------------------------------------- resources
@@ -80,7 +82,7 @@ ensure_role() {
     log "created role $NAME"
   fi
   aws iam put-role-policy --role-name "$NAME" --policy-name bench-bucket --policy-document \
-    "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:GetObject\",\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::$BUCKET\",\"arn:aws:s3:::$BUCKET/*\"]}]}"
+    "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":[\"s3:PutObject\",\"s3:GetObject\",\"s3:DeleteObject\",\"s3:ListBucket\"],\"Resource\":[\"arn:aws:s3:::$BUCKET\",\"arn:aws:s3:::$BUCKET/*\"]}]}"
   if ! aws iam get-instance-profile --instance-profile-name "$NAME" >/dev/null 2>&1; then
     aws iam create-instance-profile --instance-profile-name "$NAME" --tags "$TAGS" >/dev/null
     aws iam add-role-to-instance-profile --instance-profile-name "$NAME" --role-name "$NAME"

@@ -55,8 +55,11 @@ def read_mvsnet_cam(path):
             dmax = vals[3]
         elif len(vals) == 3:                     # min interval num
             dmax = vals[0] + vals[1] * (vals[2] - 1)
-        elif len(vals) == 2:                     # MVSNet default: 192 planes
-            dmax = vals[0] + vals[1] * 191
+        elif len(vals) == 2:
+            if vals[1] > vals[0]:                # "min max" (PatchmatchNet / IterMVS DTU cams_1)
+                dmax, interval = vals[1], None
+            else:                                # "min interval" (MVSNet, 192 planes)
+                dmax = vals[0] + vals[1] * 191
     return K, E, dmin, dmax, interval
 
 
