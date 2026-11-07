@@ -4,7 +4,8 @@
 #   ./launch_mvs_ec2.sh quota               # is the G-instance vCPU quota approved yet?
 #   ./launch_mvs_ec2.sh launch              # create role/bucket/security group if needed, start the instance + run
 #   ./launch_mvs_ec2.sh status              # instance state, results in S3, last log lines (via SSM, no SSH)
-#   ./launch_mvs_ec2.sh rerun               # later session: start the stopped instance, pull the latest code, resume
+#   ./launch_mvs_ec2.sh rerun               # start the instance if stopped, stop any job in progress, pull the latest
+#                                           # code, resume (finished downloads/envs/methods are skipped)
 #   ./launch_mvs_ec2.sh fetch [dir]         # download results (RESULTS.md, jsonl, figures) from S3
 #   ./launch_mvs_ec2.sh shell               # SSM shell on the instance
 #   ./launch_mvs_ec2.sh stop                # stop now (disk with envs + datasets is kept)
@@ -197,7 +198,9 @@ cmd_rerun() {     # a later session: same instance + disk (envs, datasets, parti
     log "started $id"
   fi
   wait_ssm "$id"
-  local script="cd $ROOT/computervision && git fetch --depth 1 origin $BRANCH && git checkout -q -B $BRANCH FETCH_HEAD; $(env_line) bash $CODE_DIR/aws/bootstrap.sh >> /var/log/mvs-run.log 2>&1"
+  # stop a job that is still running (e.g. from boot, on older code) so two runs never share the disk; the shutdown
+  # timer set at boot stays as the safety net. Finished downloads, environments and methods are kept and skipped.
+  local script="pkill -f 'aws/bootstrap.sh|aws/run_on_ec2.sh|scripts/run_all.sh|setup/install_models.sh|setup/download_datasets.sh|multi-view-stereo/scripts/run_' || true; pkill -f 'bin/gdown|wget -q --tries|7z x -y|unzip -qo|compute_eth3d_undistorted' || true; sleep 3; cd $ROOT/computervision && git fetch --depth 1 origin $BRANCH && git checkout -q -B $BRANCH FETCH_HEAD; $(env_line) bash $CODE_DIR/aws/bootstrap.sh >> /var/log/mvs-run.log 2>&1"
   script=${script//\"/\\\"}
   local cid
   cid=$(aws ssm send-command --instance-ids "$id" --document-name AWS-RunShellScript \
