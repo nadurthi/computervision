@@ -194,8 +194,8 @@ def ensure_colliders(prim):
 def build_environment(stage):
     UsdGeom.SetStageUpAxis(stage, UsdGeom.Tokens.z)
     if not args.no_warehouse and ASSETS and exists(ASSETS + WAREHOUSE):
-        wh = UsdGeom.Xform.Define(stage, "/World/Warehouse")
-        wh.GetPrim().GetReferences().AddReference(ASSETS + WAREHOUSE)
+        wh = UsdGeom.Xform.Define(stage, "/World/Warehouse")         # our transform lives here, the
+        UsdGeom.Xform.Define(stage, "/World/Warehouse/asset").GetPrim().GetReferences().AddReference(ASSETS + WAREHOUSE)
         r = bounds(wh.GetPrim())
         lo, hi = np.array(r.GetMin()), np.array(r.GetMax())
         # put the warehouse's +x wall at the dock door (x = 0), centred on the trailer
@@ -567,8 +567,9 @@ def record(anns, k):
         return
     import omni.replicator.core as rep
     from PIL import Image
-    for _ in range(5):                                        # annotators fill on a replicator step
-        rep.orchestrator.step(rt_subframes=4)
+    lidar = anns["lidar"].get_data() if "lidar" in anns else None   # read while the timeline plays
+    for _ in range(5):                                        # camera annotators fill on a replicator step
+        rep.orchestrator.step(rt_subframes=4, pause_timeline=False)
         if np.asarray(anns["rgb"].get_data()).ndim == 3:
             break
     Image.fromarray(np.asarray(anns["rgb"].get_data())[..., :3].astype(np.uint8)).save(
@@ -576,9 +577,10 @@ def record(anns, k):
     np.save(os.path.join(args.record, f"depth_{k:03d}.npy"), np.asarray(anns["depth"].get_data(), np.float32))
     seg = anns["instance"].get_data()
     Image.fromarray(np.asarray(seg["data"]).astype(np.uint16)).save(os.path.join(args.record, f"instance_{k:03d}.png"))
-    if "lidar" in anns:
-        np.save(os.path.join(args.record, f"lidar_{k:03d}.npy"),
-                np.asarray(anns["lidar"].get_data().get("data", np.zeros((0, 3))), np.float32).reshape(-1, 3))
+    if lidar is not None:
+        pts = np.asarray(lidar.get("data", np.zeros((0, 3))), np.float32).reshape(-1, 3)
+        np.save(os.path.join(args.record, f"lidar_{k:03d}.npy"), pts)
+        print(f"[cell] record {k}: {len(pts)} lidar points", flush=True)
 
 
 # ------------------------------------------------------------------------------------------- task logic
@@ -607,6 +609,7 @@ def main():
     robot = Robot(st, world)
     anns = make_sensors(st)
     world.reset()
+    world.play()                                             # physics + RTX sensors need the timeline playing
     for b in boxes:
         b["rigid"] = SingleRigidPrim(b["path"])
     robot.setup()

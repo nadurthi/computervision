@@ -224,8 +224,9 @@ def load_warehouse(stage):
         url = root + url
     if not usd_exists(url):
         raise RuntimeError(f"environment not found: {url}")
-    env = UsdGeom.Xform.Define(stage, "/World/Env/Warehouse")
-    env.GetPrim().GetReferences().AddReference(url)
+    env = UsdGeom.Xform.Define(stage, "/World/Env/Warehouse")       # our transform lives here ...
+    UsdGeom.Xform.Define(stage, "/World/Env/Warehouse/asset").GetPrim().GetReferences().AddReference(url)
+    # ... the referenced file keeps its own xformOps (adding ops to it directly fails: 'xformOp:translate already exists')
     add_label(env.GetPrim(), "warehouse")                     # children inherit it in the semantic mask
     r = world_range(env.GetPrim())
     size = np.array(r.GetSize())
@@ -432,7 +433,7 @@ def write_ply(path, pts):
         np.savetxt(f, pts, fmt="%.4f")
 
 
-def save_frame(i, anns, lidar_ann):
+def save_frame(i, anns, lidar_data):
     from PIL import Image
     tag = f"{i:04d}"
     rgb = anns["rgb"].get_data()
@@ -446,8 +447,8 @@ def save_frame(i, anns, lidar_ann):
     bb = anns["bbox2d"].get_data()
     json.dump({"boxes": np.asarray(bb["data"]).tolist(), "info": bb.get("info", {})},
               open(os.path.join(args.out, f"bbox2d_{tag}.json"), "w"), indent=1, default=str)
-    if lidar_ann is not None:
-        d = lidar_ann.get_data()
+    if lidar_data is not None:
+        d = lidar_data
         pts = np.asarray(d.get("data", np.zeros((0, 3))), dtype=np.float32).reshape(-1, 3)
         np.save(os.path.join(args.out, f"lidar_{tag}.npy"), pts)
         write_ply(os.path.join(args.out, f"lidar_{tag}.ply"), pts)
@@ -493,7 +494,8 @@ def main():
     for i in range(args.frames):
         boxes = build_box_wall(stage, assets, rng)
         world.reset()
-        n_steps = 240 if args.settle else 20                  # settling time / lidar needs a full sweep
+        world.play()                                          # RTX sensor annotators only collect while playing
+        n_steps = 240 if args.settle else 60                  # settling time / several full lidar sweeps
         for _ in range(n_steps):
             world.step(render=True)
         if args.settle:                                       # record the settled poses
@@ -503,11 +505,13 @@ def main():
                 b["rotation_matrix"] = [list(m.ExtractRotationMatrix().GetRow(r)) for r in range(3)]
         for _ in range(4):
             world.step(render=True)
-        for _ in range(5):                                    # annotators fill on a replicator step
-            rep.orchestrator.step(rt_subframes=4)
+        # lidar first, while the timeline is still playing (a replicator step pauses it by default)
+        lidar_data = lidar_ann.get_data() if lidar_ann is not None else None
+        for _ in range(5):                                    # camera annotators fill on a replicator step
+            rep.orchestrator.step(rt_subframes=4, pause_timeline=False)
             if np.asarray(anns["rgb"].get_data()).ndim == 3:
                 break
-        save_frame(i, anns, lidar_ann)
+        save_frame(i, anns, lidar_data)
         all_boxes[f"{i:04d}"] = boxes
     json.dump(all_boxes, open(os.path.join(args.out, "boxes.json"), "w"), indent=1)
     print(f"[box-wall] done -> {os.path.abspath(args.out)}")
