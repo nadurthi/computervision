@@ -40,7 +40,7 @@ isaac() {   # isaac <log-name> <python args...>
   local t0; t0=$(date +%s)
   timeout --kill-after=2m "$STEP_TIMEOUT" \
   docker run --rm --name "isaac-$name" --gpus all --network=host --entrypoint bash \
-    -e "ACCEPT_EULA=Y" -e "PRIVACY_CONSENT=N" -u 1234:1234 \
+    -e "ACCEPT_EULA=Y" -e "PRIVACY_CONSENT=N" -e "PYTHONUNBUFFERED=1" -u 1234:1234 \
     -v "$ROOT/cache/main:/isaac-sim/.cache:rw" \
     -v "$ROOT/cache/computecache:/isaac-sim/.nv/ComputeCache:rw" \
     -v "$ROOT/logs:/isaac-sim/.nvidia-omniverse/logs:rw" \
