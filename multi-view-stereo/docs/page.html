@@ -12,10 +12,10 @@
 <li>§4–5: classical MVS (plane sweep, SGM, PatchMatch with view selection, geometric consistency, fusion) and learned MVS (MVSNet and its descendants), with the equations.</li>
 <li>§6: occlusion — why it caps two-view stereo, what N views buy, and why the <i>aggregation</i> rule matters as much as N.</li>
 <li>§7–8: the benchmark design (datasets with GT depth for every view, region labels, metrics) and published numbers.</li>
-<li>§9: results of the GPU run. §10: reproduce it on AWS.</li>
+<li>§9: results — who wins on DTU and ETH3D, how much each extra view recovers on occluded pixels, and what it costs in time. §10: reproduce it locally or on AWS.</li>
 </ul></div>
 
-<div class="callout warn"><b>Status (Nov 4, 2026).</b> The theory, the code and the published numbers are final. The GPU benchmark (§9) is scripted end to end and waits on an AWS G-instance quota approval; the only numbers in §9 so far come from the CPU smoke test on a synthetic ray-traced scene, labelled as such.</div>
+<div class="callout warn"><b>Status (Nov 6, 2026).</b> The theory, the code and the published numbers are final. §9 has the interim results of the first GPU run (classical and learned MVS on DTU and ETH3D, occlusion breakdown, timing); the two-view stereo benchmark, COLMAP, Robust MVD, latency and DTU point clouds follow in the next run.</div>
 
 <h2 id="setting">1 · The calibrated N-view setting</h2>
 <p>We have a reference image $I_0$ and source images $I_1,\dots,I_{N-1}$. Camera $i$ has intrinsics $K_i$ and a world-to-camera extrinsic $[R_i\,|\,\mathbf t_i]$, so a world point $\mathbf X$ projects to</p>
@@ -190,9 +190,87 @@ $$C_\text{mean}(d^\star)=\frac{m\,c_\text{true}+(N-1-m)\,\bar c_\text{rand}}{N-1
 </tbody></table>
 <p class="footnote">From the <a href="https://arxiv.org/abs/2501.09898">FoundationStereo paper, Table 2</a>.</p>
 
-<h2 id="results">9 · Results</h2>
-<div class="callout warn"><b>Pending the GPU run.</b> This section is generated from <code>results/RESULTS.md</code> and the figures in <code>results/figures/</code> once the AWS run finishes: stereo error inside vs outside occlusions per dataset, MVS accuracy per region at N=5, accuracy on partner-occluded pixels vs N for every method, DTU point-cloud scores, runtime, and qualitative error maps.</div>
-<h3>Sanity check on a synthetic scene (CPU)</h3>
+<h2 id="results">9 · Results (interim, Nov 6 2026)</h2>
+<div class="callout warn"><b>Interim.</b> One <code>quick</code>-profile run on an NVIDIA A10G (AWS g5.2xlarge): DTU (22 test scans) and ETH3D high-res, all classical MVS methods and five learned ones, N = 2, 3, 5, 10. Not run yet: COLMAP, Robust MVD, Vis-MVSNet on ETH3D, stereo networks inside MVS, the two-view stereo benchmark (Middlebury / ETH3D / KITTI), the latency stage and the DTU point clouds. The tables below are copied from <a href="https://github.com/nadurthi/computervision/blob/multi-view-stereo/multi-view-stereo/results/quick-2026-11-06/RESULTS.md">results/quick-2026-11-06/RESULTS.md</a>; they will be replaced when the run completes.</div>
+<p>Score: % of GT pixels whose depth error is within 2 mm (DTU) or 5 cm (ETH3D); a pixel with no prediction counts as wrong. † = learned. Run resolution: DTU 800×600 for the classical methods and 1600×1200 for the learned ones, ETH3D 1152×768. Time is wall-clock per reference view on the A10G, CUDA-synchronised, including the method's own I/O for the external binaries (ACMMP). Region columns are defined in §7.3: <i>visible / occluded / outside</i> refer to the stereo partner (source #1); <i>rescued</i> = not seen by the partner but seen by another source; <i>unseen</i> = seen by no source.</p>
+
+<h3>9.1 DTU, N = 5 (within 2 mm)</h3>
+<table>
+<thead><tr><th>Method</th><th>all pixels</th><th>visible in partner</th><th>occluded in partner</th><th>outside partner</th><th>rescued</th><th>unseen</th><th>AbsRel %</th><th>time / view (s)</th></tr></thead><tbody>
+<tr><td>ACMMP</td><td><b>65.1</b></td><td><b>69.0</b></td><td>16.4</td><td>30.1</td><td>28.4</td><td>1.8</td><td>4.84</td><td>3.16</td></tr>
+<tr><td>PatchmatchNet †</td><td>64.2</td><td>68.2</td><td>15.4</td><td>27.6</td><td>26.3</td><td>0.7</td><td>4.60</td><td><b>0.30</b></td></tr>
+<tr><td>Vis-MVSNet †</td><td>63.4</td><td>67.4</td><td><b>19.7</b></td><td>22.2</td><td>24.5</td><td>1.9</td><td>4.47</td><td>5.75</td></tr>
+<tr><td>IterMVS (DTU) †</td><td>62.2</td><td>65.8</td><td>14.2</td><td><b>32.3</b></td><td><b>29.1</b></td><td>3.4</td><td>4.03</td><td>0.32</td></tr>
+<tr><td>IterMVS (BlendedMVS) †</td><td>61.1</td><td>64.9</td><td>15.2</td><td>27.1</td><td>25.8</td><td>1.3</td><td>5.55</td><td>0.32</td></tr>
+<tr><td>PatchMatch MVS (ours)</td><td>52.7</td><td>56.2</td><td>14.5</td><td>19.2</td><td>19.7</td><td>0.5</td><td>10.08</td><td>3.53</td></tr>
+<tr><td>MVSAnywhere †</td><td>32.6</td><td>34.5</td><td>11.3</td><td>14.9</td><td>14.5</td><td><b>7.5</b></td><td><b>2.19</b></td><td>2.26</td></tr>
+<tr><td>plane sweep, mean</td><td>28.7</td><td>30.6</td><td>7.0</td><td>11.4</td><td>11.1</td><td>0.3</td><td>15.33</td><td>0.52</td></tr>
+<tr><td>plane sweep, best-K + SGM</td><td>28.4</td><td>30.0</td><td>7.9</td><td>14.3</td><td>13.6</td><td>0.5</td><td>15.37</td><td>1.61</td></tr>
+<tr><td>plane sweep, best-K</td><td>20.6</td><td>21.8</td><td>6.5</td><td>9.6</td><td>9.6</td><td>0.4</td><td>16.84</td><td>1.14</td></tr>
+</tbody></table>
+
+<h3>9.2 ETH3D high-res, N = 5 (within 5 cm)</h3>
+<table>
+<thead><tr><th>Method</th><th>all pixels</th><th>visible in partner</th><th>occluded in partner</th><th>outside partner</th><th>rescued</th><th>unseen</th><th>AbsRel %</th><th>time / view (s)</th></tr></thead><tbody>
+<tr><td>ACMMP</td><td><b>70.0</b></td><td><b>78.8</b></td><td><b>56.8</b></td><td>44.7</td><td><b>71.7</b></td><td>1.9</td><td>46.81</td><td>6.79</td></tr>
+<tr><td>MVSAnywhere †</td><td>69.4</td><td>72.9</td><td>54.2</td><td><b>56.3</b></td><td>58.0</td><td><b>39.4</b></td><td><b>1.38</b></td><td>0.85</td></tr>
+<tr><td>IterMVS (BlendedMVS) †</td><td>66.2</td><td>76.6</td><td>52.2</td><td>38.4</td><td>50.1</td><td>8.1</td><td>19.57</td><td>0.16</td></tr>
+<tr><td>IterMVS (DTU) †</td><td>61.7</td><td>74.7</td><td>42.9</td><td>31.9</td><td>41.6</td><td>5.0</td><td>18.77</td><td>0.16</td></tr>
+<tr><td>PatchmatchNet †</td><td>42.8</td><td>50.4</td><td>26.0</td><td>16.5</td><td>19.6</td><td>3.1</td><td>26.94</td><td><b>0.14</b></td></tr>
+<tr><td>PatchMatch MVS (ours)</td><td>34.1</td><td>46.0</td><td>26.0</td><td>11.2</td><td>19.1</td><td>0.0</td><td>55.17</td><td>6.36</td></tr>
+<tr><td>plane sweep, best-K + SGM</td><td>26.8</td><td>31.3</td><td>15.0</td><td>10.2</td><td>15.3</td><td>3.0</td><td>134.98</td><td>2.75</td></tr>
+<tr><td>plane sweep, mean</td><td>18.2</td><td>21.8</td><td>6.7</td><td>7.6</td><td>11.5</td><td>0.0</td><td>77.18</td><td>0.98</td></tr>
+<tr><td>plane sweep, best-K</td><td>14.6</td><td>17.0</td><td>8.1</td><td>5.7</td><td>9.2</td><td>0.0</td><td>91.89</td><td>2.11</td></tr>
+</tbody></table>
+
+<h3>9.3 What the extra views buy: pixels the stereo partner cannot see</h3>
+<p>The same score restricted to reference pixels that are occluded in, or outside, the stereo partner — the pixels two-view stereo can only guess. At N = 2 the method <i>is</i> a stereo matcher on that pair.</p>
+<p><b>DTU (within 2 mm)</b></p>
+<table>
+<thead><tr><th>Method</th><th>N=2</th><th>N=3</th><th>N=5</th><th>N=10</th></tr></thead><tbody>
+<tr><td>ACMMP</td><td>5.1</td><td><b>17.5</b></td><td>25.5</td><td><b>27.5</b></td></tr>
+<tr><td>IterMVS (BlendedMVS) †</td><td>4.0</td><td>15.4</td><td>23.2</td><td>24.9</td></tr>
+<tr><td>IterMVS (DTU) †</td><td>4.9</td><td>16.4</td><td><b>26.3</b></td><td>27.4</td></tr>
+<tr><td>MVSAnywhere †</td><td><b>5.9</b></td><td>8.9</td><td>13.7</td><td>13.4</td></tr>
+<tr><td>PatchMatch MVS (ours)</td><td>0.9</td><td>2.7</td><td>17.7</td><td>19.9</td></tr>
+<tr><td>PatchmatchNet †</td><td>1.6</td><td>13.9</td><td>23.6</td><td>24.6</td></tr>
+<tr><td>plane sweep, best-K</td><td>0.9</td><td>1.7</td><td>8.6</td><td>6.2</td></tr>
+<tr><td>plane sweep, best-K + SGM</td><td>0.9</td><td>2.2</td><td>12.2</td><td>8.5</td></tr>
+<tr><td>plane sweep, mean</td><td>0.9</td><td>5.1</td><td>10.0</td><td>10.5</td></tr>
+<tr><td>Vis-MVSNet †</td><td>5.1</td><td>16.4</td><td>21.4</td><td>23.6</td></tr>
+</tbody></table>
+<p><b>ETH3D (within 5 cm)</b></p>
+<table>
+<thead><tr><th>Method</th><th>N=2</th><th>N=3</th><th>N=5</th><th>N=10</th></tr></thead><tbody>
+<tr><td>ACMMP</td><td>2.2</td><td>26.7</td><td>44.8</td><td>66.2</td></tr>
+<tr><td>IterMVS (BlendedMVS) †</td><td>6.9</td><td>24.6</td><td>38.5</td><td>57.1</td></tr>
+<tr><td>IterMVS (DTU) †</td><td>5.2</td><td>20.0</td><td>31.9</td><td>51.9</td></tr>
+<tr><td>MVSAnywhere †</td><td><b>38.4</b></td><td><b>47.9</b></td><td><b>56.3</b></td><td><b>67.4</b></td></tr>
+<tr><td>PatchMatch MVS (ours)</td><td>0.0</td><td>5.6</td><td>11.3</td><td>24.8</td></tr>
+<tr><td>PatchmatchNet †</td><td>2.9</td><td>11.0</td><td>16.6</td><td>27.7</td></tr>
+<tr><td>plane sweep, best-K</td><td>0.0</td><td>2.7</td><td>5.7</td><td>9.1</td></tr>
+<tr><td>plane sweep, best-K + SGM</td><td>0.3</td><td>4.9</td><td>10.3</td><td>15.8</td></tr>
+<tr><td>plane sweep, mean</td><td>0.0</td><td>4.3</td><td>7.6</td><td>12.0</td></tr>
+</tbody></table>
+<figure><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/mvs-nview-sweep-eth3d.png" alt="ETH3D accuracy vs number of views" loading="lazy"><figcaption>ETH3D: accuracy vs N on all pixels (left) and on pixels the stereo partner cannot see (right). Solid = classical, dash-dot = learned.</figcaption></figure>
+<figure><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/mvs-nview-sweep-dtu.png" alt="DTU accuracy vs number of views" loading="lazy"><figcaption>DTU: the same plot. The best-K plane sweeps get <i>worse</i> beyond N = 3–5 (see below).</figcaption></figure>
+
+<h3>9.4 What the numbers say</h3>
+<ul>
+<li><b>Occlusion is the case for MVS, and it is large.</b> On ETH3D, ACMMP gets 2.2% of the partner-invisible pixels right with two views, 26.7% with three, 44.8% with five and 66.2% with ten — a thirtyfold gain, while its all-pixel score goes 51.8 → 77.9. The occluded/outside pixels are exactly where the two-view floor of §6 sits; extra views lift that floor, as predicted. DTU shows the same shape at a smaller scale (5.1 → 27.5): the curve saturates by N = 5, probably because its cameras sit on one sphere cap, so a pixel hidden from the nearest source tends to be hidden from the next ones too.</li>
+<li><b>Best classical ≈ best learned, in domain.</b> On DTU the top five (ACMMP 65.1, PatchmatchNet 64.2, Vis-MVSNet 63.4, IterMVS 62.2 / 61.1) are within 4 points. The difference is cost: PatchmatchNet and IterMVS take 0.3 s per view, ACMMP 3.2 s and Vis-MVSNet 5.8 s.</li>
+<li><b>Out of domain, training data decides.</b> PatchmatchNet, trained on DTU, falls to 42.8 on ETH3D; IterMVS with BlendedMVS weights holds 66.2 (vs 61.7 with its DTU weights) at 0.16 s per view. ACMMP, with no training at all, stays on top (70.0). If you have to pick one fast network for unknown scenes, pick one trained on varied data.</li>
+<li><b>A monocular prior fills what no view sees.</b> MVSAnywhere is the only method that does well on <i>unseen</i> pixels (39.4% on ETH3D; everyone else ≤ 8%) and on partner-invisible pixels at N = 2 (38.4%): its depth prior guesses plausibly where matching cannot. It also has by far the lowest AbsRel (1.4% on ETH3D vs 47% for ACMMP, whose mean is dominated by a few gross outliers). The flip side is precision: on DTU's 2 mm threshold it is only 32.6. Robust and roughly right everywhere, vs very precise where there is texture.</li>
+<li><b>The aggregation rule matters, and best-K alone is not enough.</b> Taking the K best source costs per depth hypothesis (§6) is meant to ignore the occluded sources, but with no smoothing it also picks the best accidental match among more candidates: on DTU it scores below the plain mean (20.6 vs 28.7 at N = 5) and drops as N grows. Adding SGM regularisation fixes most of that (best-K + SGM beats the mean on ETH3D, 26.8 vs 18.2, and on DTU's partner-invisible pixels at N = 5). PatchMatch-style methods get the same benefit more cleanly through per-pixel view selection and propagation.</li>
+<li><b>Engineering beats the textbook.</b> Our ~250-line PatchMatch MVS (slanted planes, bilateral NCC, top-K view selection) reaches 52.7 on DTU — far above the plane sweeps, but 12 points below ACMMP, whose multi-scale geometric consistency and planar priors are the likely difference. On the partner-invisible pixels it needs N ≥ 5 before view selection has enough sources to choose from (2.7 → 17.7 from N = 3 to 5).</li>
+</ul>
+
+<h3>9.5 Qualitative</h3>
+<p>Reference image, GT depth, the region labels for the stereo partner, then per method the error at N = 2 and N = 5 (dark = small error, white/yellow = above the scale) and the N = 5 depth map. In the ETH3D courtyard, look at the left wall, seen at a grazing angle and poorly covered by the stereo partner: ACMMP gets it wrong with two views and right with five, while the IterMVS models still miss most of it. The ground strip at the bottom (blue = rescued) shows the same effect.</p>
+<figure><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/mvs-qualitative-eth3d-scaled.jpg" alt="ETH3D courtyard qualitative results" loading="lazy"><figcaption>ETH3D courtyard, view 0. Error scale 0–0.2 m.</figcaption></figure>
+<figure><img src="https://perceptionstack.dev/wp-content/uploads/2026/11/mvs-qualitative-dtu-scaled.jpg" alt="DTU qualitative results" loading="lazy"><figcaption>DTU, first test scan.</figcaption></figure>
+
+<h3>9.6 Sanity check on a synthetic scene (CPU)</h3>
 <p>Before any GPU time, <code>scripts/smoke_test.py</code> ray-traces a textured wall, a tilted floor and a box in front of the wall (exact depth for every view), with sources to the right, left, above and below the reference. Inlier ratio ($\lt$3% depth error) on all pixels and on the 3.4% of pixels the right-hand source cannot see:</p>
 <table>
 <thead><tr><th>Method</th><th>Views</th><th>All pixels</th><th>Occluded in partner</th></tr></thead>
@@ -206,14 +284,19 @@ $$C_\text{mean}(d^\star)=\frac{m\,c_\text{true}+(N-1-m)\,\bar c_\text{rand}}{N-1
 <p>The occlusion effect is already unmistakable: on pixels the stereo partner cannot see, going from 2 to 5 views raises the inlier ratio fourfold, while the score on all pixels moves by five points (the floor at grazing angle dominates the rest of the error). On this toy scene almost every partner-occluded pixel is visible in three other views, so mean and best-K tie; the real datasets, where only one or two sources may see a pixel, are where the aggregation rule should separate. The same test verifies the calibrated rectification used to run stereo networks inside MVS: a GT disparity round trip reproduces the reference depth on 99% of pixels for sources to the right, left, above and below.</p>
 
 <h2 id="reproduce">10 · Reproduce</h2>
+<p>One script does everything — environments and the 11 model repositories, datasets, every benchmark, <code>RESULTS.md</code> and a self-contained <code>report.html</code>. It is idempotent: re-running it resumes where it stopped.</p>
 <pre><code>git clone -b multi-view-stereo https://github.com/nadurthi/computervision
-cd computervision/multi-view-stereo/aws
-./launch_mvs_ec2.sh quota                  # needs 8 vCPUs of "Running On-Demand G and VT instances"
-./launch_mvs_ec2.sh launch                 # g6.2xlarge (L4): envs, 11 model repos, weights, datasets, benchmark
-./launch_mvs_ec2.sh status                 # progress via SSM
-./launch_mvs_ec2.sh fetch ./mvs_results    # RESULTS.md, summary.json, figures
-PROFILE=full ./launch_mvs_ec2.sh rerun     # everything, resumes where it stopped</code></pre>
-<p>The instance stops itself when the run ends, after 20 idle minutes, or after 8 hours; datasets and Google-Drive weights are mirrored to a private S3 bucket after their first download. On your own GPU machine: <code>setup/install_models.sh</code>, <code>setup/download_datasets.sh … quick</code>, <code>scripts/run_all.sh quick …</code>. A quick run is about 3–5 hours including setup.</p>
+cd computervision/multi-view-stereo
+bash scripts/run_benchmark.sh quick /opt/mvs      # Ubuntu 22.04 + NVIDIA GPU; or: full
+# subsets: METHODS="acmmp itermvs_blendedmvs" ONLY=mvs|stereo|latency|pointcloud RESET=colmap SKIP_SETUP=1</code></pre>
+<p>No GPU? <code>scripts/make_synthetic_data.py</code> plus <code>SKIP_SETUP=1 DEVICE=cpu bash scripts/run_benchmark.sh smoke …</code> runs the whole pipeline on the ray-traced scene in about five minutes.</p>
+<p>On AWS, the launcher only wraps the same script with S3 syncing (datasets, weights and results are cached in a private bucket) and an auto-stop watchdog:</p>
+<pre><code>cd aws
+./launch_mvs_ec2.sh launch                 # g6.2xlarge (L4), falls back to g5.2xlarge (A10G)
+./launch_mvs_ec2.sh status                 # progress via SSM, no SSH
+./launch_mvs_ec2.sh fetch ./mvs_results    # RESULTS.md, report.html, figures
+./launch_mvs_ec2.sh rerun                  # same disk, resumes unfinished methods</code></pre>
+<p>The instance stops itself when the run ends, after 20 idle minutes, or after 8 hours. A quick run is about 3–5 hours on first setup (most of it downloading DTU depth maps) and well under that afterwards.</p>
 
 <p class="footnote">Datasets: DTU MVS (Aanæs et al.), ETH3D (Schöps et al.), Middlebury (Scharstein et al.), KITTI 2015 (Menze &amp; Geiger), BlendedMVS (Yao et al.). Methods' code and weights belong to their authors and are downloaded from the official repositories. Related: <a href="/tutorials/algorithms/stereo/">Stereo &amp; disparity</a> · <a href="/tutorials/algorithms/bundle-adjustment/">Bundle adjustment</a> · <a href="/tutorials/applications/carton-wall-perception/">Unloading a box wall</a> · <a href="/tutorials/applications/">back to Applications</a>.</p>
 
