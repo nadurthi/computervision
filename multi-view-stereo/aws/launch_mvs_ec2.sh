@@ -202,7 +202,7 @@ cmd_rerun() {     # a later session: same instance + disk (envs, datasets, parti
   wait_ssm "$id"
   # stop a job that is still running (e.g. from boot, on older code) so two runs never share the disk; the shutdown
   # timer set at boot stays as the safety net. Finished downloads, environments and methods are kept and skipped.
-  local script="pkill -f 'aws/bootstrap.sh|aws/run_on_ec2.sh|scripts/run_all.sh|setup/install_models.sh|setup/download_datasets.sh|multi-view-stereo/scripts/run_' || true; pkill -f 'bin/gdown|wget -q --tries|7z x -y|unzip -qo|compute_eth3d_undistorted' || true; sleep 3; cd $ROOT/computervision && git fetch --depth 1 origin $BRANCH && git checkout -q -B $BRANCH FETCH_HEAD; $(env_line) bash $CODE_DIR/aws/bootstrap.sh >> /var/log/mvs-run.log 2>&1"
+  local script="pkill -f 'aws/bootstrap.sh|aws/run_on_ec2.sh|scripts/run_all.sh|setup/install_models.sh|setup/download_datasets.sh|multi-view-stereo/scripts/run_' || true; pkill -f 'bin/gdown|wget -q --tries|7z x -y|unzip -qo|compute_eth3d_undistorted' || true; pkill -x colmap || true; pkill -x ACMMP || true; sleep 3; cd $ROOT/computervision && git fetch --depth 1 origin $BRANCH && git checkout -q -B $BRANCH FETCH_HEAD; $(env_line) bash $CODE_DIR/aws/bootstrap.sh >> /var/log/mvs-run.log 2>&1"
   script=${script//\"/\\\"}
   local cid
   cid=$(aws ssm send-command --instance-ids "$id" --document-name AWS-RunShellScript \
