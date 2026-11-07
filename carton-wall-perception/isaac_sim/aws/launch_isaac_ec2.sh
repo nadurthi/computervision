@@ -132,23 +132,42 @@ cmd_launch() {
   sg=$(ensure_sg)
   ami=$(aws ssm get-parameter --name "$AMI_PARAM" --query Parameter.Value --output text)
   ud=$(user_data_file)
-  [ "$SPOT" = "1" ] && market=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
-  log "launching $INSTANCE_TYPE from $ami"
-  for attempt in 1 2 3 4; do
-    if id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$INSTANCE_TYPE" --count 1 \
-        --iam-instance-profile "Name=$NAME" --security-group-ids "$sg" \
-        --user-data "file://$ud" --instance-initiated-shutdown-behavior stop \
-        --metadata-options HttpTokens=required \
-        --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3,DeleteOnTermination=true}' \
-        --tag-specifications "ResourceType=instance,Tags=[{$TAGS},{Key=Name,Value=$NAME}]" "ResourceType=volume,Tags=[{$TAGS}]" \
-        "${market[@]}" --query 'Instances[0].InstanceId' --output text 2>/tmp/isaac-run-err); then
-      break
-    fi
-    if grep -q "Invalid IAM Instance Profile" /tmp/isaac-run-err && [ $attempt -lt 4 ]; then sleep 10; continue; fi
-    grep -q VcpuLimitExceeded /tmp/isaac-run-err && log "EC2 quota 'Running On-Demand G and VT instances' must be >= 8 vCPUs in $REGION"
-    cat /tmp/isaac-run-err >&2; rm -f "$ud"; exit 1
+  # Spot: one-time request, so a shutdown terminates (results are already in S3); `rerun` then means `launch` again.
+  local shutdown_behavior=stop
+  if [ "$SPOT" = "1" ]; then
+    market=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
+    shutdown_behavior=terminate
+  fi
+  # GPU capacity varies by availability zone: try each default subnet that offers the instance type.
+  local vpc subnets
+  vpc=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
+  subnets=$(for az in $(aws ec2 describe-instance-type-offerings --location-type availability-zone \
+                 --filters "Name=instance-type,Values=$INSTANCE_TYPE" --query 'InstanceTypeOfferings[].Location' --output text); do
+              aws ec2 describe-subnets --filters "Name=vpc-id,Values=$vpc" "Name=availability-zone,Values=$az" \
+                "Name=default-for-az,Values=true" --query 'Subnets[0].SubnetId' --output text
+            done | grep -v None | sort)
+  log "launching $INSTANCE_TYPE$([ "$SPOT" = "1" ] && echo ' (spot)') from $ami"
+  id=""
+  for subnet in $subnets; do
+    for attempt in 1 2 3 4; do
+      if id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$INSTANCE_TYPE" --count 1 \
+          --subnet-id "$subnet" --iam-instance-profile "Name=$NAME" --security-group-ids "$sg" \
+          --user-data "file://$ud" --instance-initiated-shutdown-behavior "$shutdown_behavior" \
+          --metadata-options HttpTokens=required \
+          --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3,DeleteOnTermination=true}' \
+          --tag-specifications "ResourceType=instance,Tags=[{$TAGS},{Key=Name,Value=$NAME}]" "ResourceType=volume,Tags=[{$TAGS}]" \
+          "${market[@]}" --query 'Instances[0].InstanceId' --output text 2>/tmp/isaac-run-err); then
+        break 2
+      fi
+      id=""
+      if grep -q "Invalid IAM Instance Profile" /tmp/isaac-run-err && [ $attempt -lt 4 ]; then sleep 10; continue; fi
+      if grep -q "InsufficientInstanceCapacity" /tmp/isaac-run-err; then log "no capacity in $subnet, trying the next zone"; break; fi
+      grep -q VcpuLimitExceeded /tmp/isaac-run-err && log "EC2 GPU quota (G and VT, $([ "$SPOT" = "1" ] && echo spot || echo on-demand)) too low in $REGION: other GPU instances may be using it"
+      cat /tmp/isaac-run-err >&2; rm -f "$ud"; exit 1
+    done
   done
   rm -f "$ud"
+  [ -z "$id" ] && { log "no zone had capacity for $INSTANCE_TYPE; try again later or with/without SPOT=1"; exit 1; }
   log "launched $id. Auto-stop: after the run, after ${IDLE_MIN} idle min, or after ${MAX_HOURS} h."
   log "progress: $0 status    shell: aws ssm start-session --target $id"
 }

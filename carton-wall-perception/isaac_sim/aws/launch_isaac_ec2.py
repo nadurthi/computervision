@@ -150,7 +150,8 @@ def launch(a):
     kw = dict(ImageId=ami, InstanceType=INSTANCE_TYPE, MinCount=1, MaxCount=1,
               IamInstanceProfile={"Name": profile}, SecurityGroupIds=[sg],
               UserData=user_data(a),
-              InstanceInitiatedShutdownBehavior="stop",
+              # spot is a one-time request: shutdown terminates (results are already in S3)
+              InstanceInitiatedShutdownBehavior="terminate" if a.spot else "stop",
               BlockDeviceMappings=[{"DeviceName": "/dev/sda1",
                                     "Ebs": {"VolumeSize": 150, "VolumeType": "gp3", "DeleteOnTermination": True}}],
               MetadataOptions={"HttpTokens": "required"},
@@ -158,18 +159,35 @@ def launch(a):
                                  {"ResourceType": "volume", "Tags": TAGS}])
     if market:
         kw["InstanceMarketOptions"] = market
-    for attempt in range(4):
-        try:
-            iid = ec2.run_instances(**kw)["Instances"][0]["InstanceId"]
+    # GPU capacity varies by availability zone: try each default subnet that offers the instance type
+    vpc = ec2.describe_vpcs(Filters=[{"Name": "isDefault", "Values": ["true"]}])["Vpcs"][0]["VpcId"]
+    zones = {o["Location"] for o in ec2.describe_instance_type_offerings(
+        LocationType="availability-zone", Filters=[{"Name": "instance-type", "Values": [INSTANCE_TYPE]}])["InstanceTypeOfferings"]}
+    subnets = sorted((s["AvailabilityZone"], s["SubnetId"]) for s in ec2.describe_subnets(Filters=[
+        {"Name": "vpc-id", "Values": [vpc]}, {"Name": "default-for-az", "Values": ["true"]}])["Subnets"]
+        if s["AvailabilityZone"] in zones)
+    iid = None
+    for az, subnet in subnets:
+        kw["SubnetId"] = subnet
+        for attempt in range(4):
+            try:
+                iid = ec2.run_instances(**kw)["Instances"][0]["InstanceId"]
+                break
+            except ClientError as e:
+                if "Invalid IAM Instance Profile" in str(e) and attempt < 3:
+                    time.sleep(10)
+                    continue
+                if "InsufficientInstanceCapacity" in str(e):
+                    print(f"no capacity in {az}, trying the next zone")
+                    break
+                if "VcpuLimitExceeded" in str(e):
+                    sys.exit(f"EC2 GPU quota (G and VT, {'spot' if a.spot else 'on-demand'}) too low in us-east-1; "
+                             "other GPU instances may be using it. " + str(e))
+                raise
+        if iid:
             break
-        except ClientError as e:
-            if "Invalid IAM Instance Profile" in str(e) and attempt < 3:
-                time.sleep(10)
-                continue
-            if "VcpuLimitExceeded" in str(e):
-                sys.exit("EC2 quota: 'Running On-Demand G and VT instances' must be >= 8 vCPUs in us-east-1 "
-                         "(Service Quotas console). " + str(e))
-            raise
+    if not iid:
+        sys.exit(f"no zone had capacity for {INSTANCE_TYPE}; try again later or with/without --spot")
     print(f"launched {iid} ({INSTANCE_TYPE}{', spot' if a.spot else ''}). The run takes ~30-60 min the first time.")
     print(f"progress:  python {sys.argv[0]} status        shell:  aws ssm start-session --target {iid}")
 
