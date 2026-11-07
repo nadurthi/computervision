@@ -12,7 +12,8 @@
 #   MODE=docker (default): Docker + NVIDIA Container Toolkit, NVIDIA driver 580 for Isaac Sim 5.1
 #                          (the 595 driver crashes the 5.1 renderer at startup), ~25 GB for the image.
 #   MODE=native:           an Isaac Sim 5.x install; ISAAC_SIM_PATH points at the folder with python.sh.
-#   Both: python3 with numpy + Pillow (matplotlib optional) for the report; huggingface_hub to fetch assets.
+#   Both: python3 (huggingface_hub is installed with pip to fetch assets). The report uses numpy + Pillow from
+#         the host python3 when available, otherwise Isaac Sim's own Python.
 #
 # Settings (environment variables)
 #   OUT=./isaac_runs/run-<time>   output folder           ISAAC_IMAGE=nvcr.io/nvidia/isaac-sim:5.1.0
@@ -96,5 +97,25 @@ if [ "${RUN_SCRIPTS:-1}" = "1" ]; then
 fi
 
 ls -laR "$OUT" > "$OUT/listing.txt"
-python3 "$HERE/make_report.py" "$OUT" || echo "[run_all] report failed"
+
+# ---- report.html: host python3 if it has numpy + Pillow (installed with pip if possible), otherwise Isaac's own
+# Python (it ships both), so the report needs nothing extra on the machine
+report_ok=0
+if ! python3 -c "import numpy, PIL" 2>/dev/null; then
+  python3 -m pip install -q --user numpy pillow 2>/dev/null \
+    || python3 -m pip install -q --break-system-packages numpy pillow 2>/dev/null || true
+fi
+if python3 -c "import numpy, PIL" 2>/dev/null; then
+  python3 "$HERE/make_report.py" "$OUT" > "$OUT/report.log" 2>&1 && report_ok=1
+fi
+if [ "$report_ok" = 0 ]; then
+  echo "[run_all] host python3 could not build the report; using Isaac Sim's Python"
+  if [ "$MODE" = "docker" ]; then
+    docker run --rm --entrypoint bash -u 1234:1234 -e "ACCEPT_EULA=Y" -v "$HERE:/work:ro" -v "$OUT:/out:rw" \
+      "$IMAGE" -c "cd /isaac-sim && ./python.sh /work/make_report.py /out" >> "$OUT/report.log" 2>&1 && report_ok=1
+  else
+    "$ISAAC_SIM_PATH/python.sh" "$HERE/make_report.py" "$OUT" >> "$OUT/report.log" 2>&1 && report_ok=1
+  fi
+fi
+[ "$report_ok" = 1 ] || echo "[run_all] report failed, see $OUT/report.log"
 echo "[run_all] DONE $OUT  (report: $OUT/report.html)"

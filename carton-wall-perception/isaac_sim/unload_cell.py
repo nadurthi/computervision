@@ -586,12 +586,24 @@ def make_sensors(stage_):
 
 def accumulate_lidar(ann, step, n_frames=12):
     """A rotating lidar returns one azimuth slice per rendered frame (Example_Rotary: 10 Hz, so 6 frames per turn
-    at 60 fps). Step the sim n_frames times and stack the slices into one full scan. Points are in world frame."""
+    at 60 fps). Step the sim n_frames times and stack the slices into one full scan. Points are in the sensor frame."""
+    import omni.timeline
+    tl = omni.timeline.get_timeline_interface()
+    if not tl.is_playing():           # a replicator step can leave the timeline paused; RTX lidar then returns nothing
+        tl.play()
     chunks = []
+    def read():
+        d = ann.get_data()
+        return np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, dtype=np.float32)
+
     for _ in range(n_frames):
         step()
-        d = ann.get_data()
-        arr = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, dtype=np.float32)
+        arr = read()
+        if not arr.size:
+            # after the first rep.orchestrator.step() render products may only refresh on replicator steps
+            import omni.replicator.core as rep
+            rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
+            arr = read()
         if arr.size:
             chunks.append(arr.reshape(-1, 3))
     return {"data": np.concatenate(chunks) if chunks else np.zeros((0, 3), np.float32)}

@@ -27,7 +27,7 @@ What it writes per frame (in --out):
     instance_XXXX.png/.json       instance-id mask + id -> prim path / label mapping
     semantic_XXXX.png/.json       semantic mask (classes: carton, wall, floor, warehouse) + id -> label mapping
     bbox2d_XXXX.json              tight 2D boxes per carton
-    lidar_XXXX.npy / .ply         lidar points (world frame, N x 3) and, when available, per-point object ids
+    lidar_XXXX.npy / .ply         lidar points (sensor frame, N x 3; add lidar.json position_m for world) and, when available, per-point object ids
     camera.json, lidar.json       intrinsics / extrinsics
     boxes.json                    ground truth: prim path, size (m), pose of every carton
 """
@@ -419,11 +419,11 @@ def make_lidar():
     rp = rep.create.render_product(sensor.GetPath(), [1, 1], name="LidarRP")
     # Per-frame point cloud. In Isaac Sim 5.1 the accumulating IsaacCreateRTXLidarScanBuffer returned 0 points
     # in a plain standalone loop, while this one returned ~29k (see lidar_test.py). It gives one azimuth
-    # slice per frame, so accumulate_lidar() stacks several frames into a full scan (world frame).
+    # slice per frame, so accumulate_lidar() stacks several frames into a full scan (sensor frame: rotation identity, origin at position_m).
     ann = rep.AnnotatorRegistry.get_annotator("IsaacExtractRTXSensorPointCloudNoAccumulator")
     ann.attach([rp.path])
     return ann, {"prim": str(sensor.GetPath()), "config": args.lidar_config, "position_m": list(pos),
-                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "points_frame": "world",
+                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "points_frame": "sensor",
                  "scan": "12 per-frame slices stacked (one full rotation or more)"}
 
 
@@ -436,12 +436,24 @@ def write_ply(path, pts):
 
 def accumulate_lidar(ann, step, n_frames=12):
     """A rotating lidar returns one azimuth slice per rendered frame (Example_Rotary: 10 Hz, so 6 frames per turn
-    at 60 fps). Step the sim n_frames times and stack the slices into one full scan. Points are in world frame."""
+    at 60 fps). Step the sim n_frames times and stack the slices into one full scan. Points are in the sensor frame."""
+    import omni.timeline
+    tl = omni.timeline.get_timeline_interface()
+    if not tl.is_playing():           # a replicator step can leave the timeline paused; RTX lidar then returns nothing
+        tl.play()
     chunks = []
+    def read():
+        d = ann.get_data()
+        return np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, dtype=np.float32)
+
     for _ in range(n_frames):
         step()
-        d = ann.get_data()
-        arr = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, dtype=np.float32)
+        arr = read()
+        if not arr.size:
+            # after the first rep.orchestrator.step() render products may only refresh on replicator steps
+            import omni.replicator.core as rep
+            rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
+            arr = read()
         if arr.size:
             chunks.append(arr.reshape(-1, 3))
     return {"data": np.concatenate(chunks) if chunks else np.zeros((0, 3), np.float32)}
