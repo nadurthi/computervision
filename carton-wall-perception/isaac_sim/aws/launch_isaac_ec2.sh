@@ -192,7 +192,7 @@ cmd_rerun() {     # a later session: same instance, latest code from GitHub, sam
     log "started $id"
   fi
   wait_ssm "$id"
-  local script="cd /opt/isaac/computervision && git pull --ff-only; $(env_line) bash $CODE_DIR/bootstrap.sh >> /var/log/isaac-run.log 2>&1"
+  local script="cd /opt/isaac/computervision && git -c safe.directory=* pull --ff-only; $(env_line) bash $CODE_DIR/bootstrap.sh >> /var/log/isaac-run.log 2>&1"
   local cid
   cid=$(aws ssm send-command --instance-ids "$id" --document-name AWS-RunShellScript \
         --parameters "{\"commands\":[\"$script\"],\"executionTimeout\":[\"$((MAX_HOURS * 3600))\"]}" \

@@ -25,7 +25,7 @@ nvidia-smi | tee "$OUT/nvidia-smi.txt"
 if [ ! -d "$ROOT/computervision" ]; then
   git clone --depth 1 https://github.com/nadurthi/computervision "$ROOT/computervision"
 else
-  git -C "$ROOT/computervision" pull --ff-only
+  git -c safe.directory="*" -C "$ROOT/computervision" pull --ff-only   # repo is chowned to the container uid
 fi
 CODE="$ROOT/computervision/carton-wall-perception/isaac_sim"
 python3 -m pip install -q huggingface_hub

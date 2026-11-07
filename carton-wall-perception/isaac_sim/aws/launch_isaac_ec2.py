@@ -219,7 +219,7 @@ def rerun(a):
         if info["InstanceInformationList"]:
             break
         time.sleep(15)
-    script = (f"cd /opt/isaac/computervision && git pull --ff-only; "
+    script = (f"cd /opt/isaac/computervision && git -c safe.directory=* pull --ff-only; "
               f"{env_line(a)} bash {CODE_DIR}/bootstrap.sh >> /var/log/isaac-run.log 2>&1")
     cmd = ssm.send_command(InstanceIds=[iid], DocumentName="AWS-RunShellScript",
                            Parameters={"commands": [script], "executionTimeout": [str(a.max_hours * 3600)]})
