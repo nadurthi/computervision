@@ -86,7 +86,8 @@ WALL_FACE_X = 1.05                                      # front face of the box 
 BELT_Y = 0.75                                           # conveyor centre line (beside the robot)
 BELT_X0 = 0.9                                           # belt starts here and runs towards -x
 BELT_W = 0.6
-DOWN = euler_angles_to_quat(np.array([0.0, np.pi / 2, 0.0]))   # UR10 ee_link x-axis pointing down
+DOWN = euler_angles_to_quat(np.array([0.0, np.pi / 2, 0.0]))
+FOLDED = np.array([0.0, -np.pi / 2, np.pi / 2, -np.pi / 2, -np.pi / 2, 0.0])   # upright, clear of the wall   # UR10 ee_link x-axis pointing down
 
 CANDIDATE_UR10 = ["/Isaac/Robots/UniversalRobots/ur10/ur10.usd", "/Isaac/Robots/UR10/ur10.usd"]
 CANDIDATE_ISAAC_BOXES = [f"/Isaac/Environments/Simple_Warehouse/Props/SM_CardBox{c}_{i:02d}.usd"
@@ -170,7 +171,15 @@ def fit_reference(stage, path, url, size=None, bottom_center=(0, 0, 0), yaw=0.0)
 
 
 def strip_physics(prim):
-    """SimReady assets carry their own rigid bodies; the wrapper becomes the single rigid body instead."""
+    """SimReady assets carry their own rigid bodies; the wrapper becomes the single rigid body instead.
+    Instanced sub-prims are made editable first, otherwise a rigid body inside an instance survives and the
+    box falls apart from its wrapper."""
+    for _ in range(4):                                       # nested instances: unpack level by level
+        inst = [p for p in Usd.PrimRange(prim) if p.IsInstance()]
+        if not inst:
+            break
+        for p in inst:
+            p.SetInstanceable(False)
     for p in Usd.PrimRange(prim):
         if p != prim and p.HasAPI(UsdPhysics.RigidBodyAPI):
             p.RemoveAPI(UsdPhysics.RigidBodyAPI)
@@ -385,12 +394,11 @@ class Conveyor:
                 and self.top - 0.05 < p[2] < self.top + 0.6)
 
     def step(self, bodies):
-        """Fallback drive + clean-up: boxes past the end of the belt are removed."""
+        """Fallback drive + bookkeeping: boxes past the end of the belt are no longer tracked."""
         for b in list(bodies):
             pos, _ = b["rigid"].get_world_pose()
-            if pos[0] < self.x0 - 0.5:
-                b["rigid"].prim.SetActive(False)
-                bodies.remove(b)
+            if pos[0] < self.x0 - 0.5 or pos[2] < -1.0:         # off the end of the belt: stop tracking it
+                bodies.remove(b)                              # (deactivating prims mid-simulation breaks physics views)
                 continue
             if not self.surface_api and self.on_belt(pos) and not b.get("held"):
                 v = b["rigid"].get_linear_velocity()
@@ -416,6 +424,11 @@ class Robot:
         else:
             UsdGeom.Xformable(prim).AddTranslateOp().Set(pos)
         self.arm = world.scene.add(SingleArticulation("/World/UR10", name="ur10"))
+        try:   # applied at world.reset(), before the stack starts settling
+            self.arm.set_joints_default_state(positions=np.concatenate([FOLDED, np.zeros(max(0, self.arm.num_dof - 6))])
+                                              if getattr(self.arm, "num_dof", None) else FOLDED)
+        except Exception as e:
+            print("[cell] could not set the default joint state before reset:", e, flush=True)
         self.gripper_path = self._find_surface_gripper(prim.GetPrim())
         self.tool_len = 0.12
         if self.gripper_path is None:     # visual suction cup on the flange; grasping falls back to attach
@@ -448,6 +461,9 @@ class Robot:
         return None
 
     def setup(self):
+        q = self.arm.get_joint_positions()
+        q[:6] = FOLDED
+        self.arm.set_joint_positions(q)                      # in case the default state was not applied
         """After world.reset(): IK solver and gripper handles."""
         cfg = interface_config_loader.load_supported_lula_kinematics_solver_config("UR10")
         self.lula = LulaKinematicsSolver(**cfg)
