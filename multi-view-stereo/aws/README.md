@@ -6,25 +6,37 @@ cd multi-view-stereo/aws
 ./launch_mvs_ec2.sh launch           # PROFILE=quick by default
 ./launch_mvs_ec2.sh status           # state, GPU use, last 30 log lines (SSM, no SSH)
 ./launch_mvs_ec2.sh fetch ./mvs_results    # -> ./mvs_results/quick/RESULTS.md, figures/, jsonl
-PROFILE=full ./launch_mvs_ec2.sh rerun     # later: same disk (envs + data kept), resumes unfinished methods
+PROFILE=full ./launch_mvs_ec2.sh rerun     # later: fresh instance, resumes unfinished methods from S3
 ./launch_mvs_ec2.sh cleanup          # terminate + delete role/profile/SG; the bucket (cache + results) is kept
 ```
 
 | File | Runs where | What it does |
 |---|---|---|
 | `launch_mvs_ec2.sh` | your machine / CloudShell (AWS CLI v2) | creates the role, bucket, security group; launches, reruns, reports, fetches, cleans up |
-| `bootstrap.sh` | instance | installs the auto-stop watchdog, waits for the GPU, runs `run_on_ec2.sh`, stops the instance |
-| `mvs-watchdog.sh` | instance (systemd) | stops the instance when idle or after `MAX_HOURS`, on every boot |
+| `bootstrap.sh` | instance | installs the watchdog, waits for the GPU, runs `run_on_ec2.sh`, shuts down (= terminates) the instance |
+| `mvs-watchdog.sh` | instance (systemd) | syncs to S3 and terminates the instance when idle or after `MAX_HOURS` |
 | `run_on_ec2.sh` | instance | syncs `cache/` and `results/` with S3 around `scripts/run_benchmark.sh` (the same script you run locally) |
 
 What `launch` creates (tagged `Project=mvs-bench`): IAM role + instance profile `mvs-bench` (SSM + read/write on the
 bucket only), private bucket `mvs-bench-<account>-us-east-1` (`cache/` = mirrored datasets and weights,
 `results/<profile>/`, `logs/`), a security group with **no inbound rules**, and a **g6.2xlarge** (L4 24 GB, 8 vCPU,
-32 GB RAM) from the Deep Learning Base OSS NVIDIA Driver AMI (Ubuntu 22.04) with a 500 GB gp3 disk. If no zone has
+32 GB RAM) from the Deep Learning Base OSS NVIDIA Driver AMI (Ubuntu 22.04) with a 500 GB gp3 disk that is deleted with the instance. If no zone has
 g6.2xlarge capacity, it tries every zone again with **g5.2xlarge** (A10G 24 GB, ~$1.21/h); set `INSTANCE_TYPES` to
 change the order.
 
-## Automatic stop (always on)
+## S3 is the only persistent storage
+
+Instances are disposable: shutdown behaviour is **terminate**, and the EBS volume has `DeleteOnTermination`, so nothing
+is left on EC2 after a run (no stopped instances, no volumes, no snapshots). Everything that matters lives in the bucket:
+
+* `cache/`: dataset archives and downloaded weights, synced every 15 minutes and at the end; the next instance pulls
+  them instead of re-downloading (Google Drive and the slow DTU mirror are hit only once);
+* `results/<profile>/`: per-method jsonl, logs, report, synced every 5 minutes, at the end, and by the watchdog before
+  it shuts down; the next instance pulls them, and finished methods are skipped.
+
+What is rebuilt on every instance: Python environments, the model repositories and the ACMMP build (~35 min).
+
+## Automatic shutdown (always on)
 
 1. when the run finishes, success or failure;
 2. after 20 idle minutes (no run in progress, GPU < 5 %, CPU load < 1);
@@ -41,8 +53,8 @@ restarts and reruns; the user data schedules a hard shutdown before doing anythi
 | datasets | ~45 GB (28 GB is DTU depth maps from a China mirror, ~20 MB/s), ~45-60 min first time; minutes from the S3 cache afterwards | ~160 GB, ~2-3 h |
 | benchmark | ~2-3 h | ~10 h (split over two `rerun`s with MAX_HOURS=8) |
 
-g6.2xlarge on-demand is about $0.98/h, so a quick run is roughly $4-5; the 500 GB disk is ~$40/month while it exists
-(`terminate` removes it; the S3 cache makes the next setup fast).
+g6.2xlarge on-demand is about $0.98/h, so a quick run is roughly $4-5. Between runs only S3 is billed (~50 GB of
+cache, about $1.2/month).
 
 ## Google Drive
 

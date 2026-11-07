@@ -3,12 +3,13 @@
 # syncing. Nothing benchmark-specific lives here.
 #
 #   before:  s3://$BUCKET/cache/              -> /opt/mvs/cache/             (archives + weights from earlier runs)
-#            s3://$BUCKET/results/<profile>/  -> /opt/mvs/results/<profile>/ (resume after a terminate)
+#            s3://$BUCKET/results/<profile>/  -> /opt/mvs/results/<profile>/ (resume from the previous instance)
 #            RESET methods are also deleted from S3, so the sync cannot bring them back
-#   during:  results/<profile>/ -> S3 every 5 minutes
+#   during:  results/<profile>/ -> S3 every 5 minutes, new cache downloads every 15 minutes
 #   after:   results and cache   -> S3
 #
-# /opt/mvs (models, data, cache, results) lives on the instance disk and survives stop/start.
+# S3 is the only persistent storage: /opt/mvs (models, data, cache, results) is on the instance disk, which is
+# deleted when the instance shuts down (shutdown behaviour = terminate).
 set -uo pipefail
 ROOT=/opt/mvs
 PROFILE=${PROFILE:-quick}
@@ -34,7 +35,8 @@ for m in ${RESET:-}; do
 done
 aws s3 sync "$S3R" "$OUT" --only-show-errors || true
 
-( while sleep 300; do aws s3 sync "$OUT" "$S3R" --only-show-errors "${EXCL[@]}" >/dev/null 2>&1; done ) &
+( n=0; while sleep 300; do aws s3 sync "$OUT" "$S3R" --only-show-errors "${EXCL[@]}" >/dev/null 2>&1
+    n=$((n + 1)); [ $((n % 3)) -eq 0 ] && aws s3 sync "$CACHE_DIR" "$S3C" --only-show-errors >/dev/null 2>&1; done ) &
 SYNC_PID=$!
 trap 'kill $SYNC_PID 2>/dev/null; rm -f /run/mvs-busy' EXIT
 

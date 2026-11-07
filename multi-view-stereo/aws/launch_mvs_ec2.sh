@@ -4,32 +4,35 @@
 #   ./launch_mvs_ec2.sh quota               # is the G-instance vCPU quota approved yet?
 #   ./launch_mvs_ec2.sh launch              # create role/bucket/security group if needed, start the instance + run
 #   ./launch_mvs_ec2.sh status              # instance state, results in S3, last log lines (via SSM, no SSH)
-#   ./launch_mvs_ec2.sh rerun               # start the instance if stopped, stop any job in progress, pull the latest
-#                                           # code, resume (finished downloads/envs/methods are skipped)
+#   ./launch_mvs_ec2.sh rerun               # resume: if an instance is running, restart its job on the latest code;
+#                                           # otherwise launch a fresh one (results + cache come back from S3)
 #   ./launch_mvs_ec2.sh fetch [dir]         # download results (RESULTS.md, jsonl, figures) from S3
 #   ./launch_mvs_ec2.sh shell               # SSM shell on the instance
-#   ./launch_mvs_ec2.sh stop                # stop now (disk with envs + datasets is kept)
-#   ./launch_mvs_ec2.sh terminate           # delete the instance and its disk
+#   ./launch_mvs_ec2.sh stop                # = terminate (nothing is kept on EC2)
+#   ./launch_mvs_ec2.sh terminate           # delete the instance and its disk (results/cache are already in S3)
 #   ./launch_mvs_ec2.sh cleanup             # terminate + delete role, instance profile, security group (keeps bucket)
 #
 # Settings (environment variables):
 #   PROFILE=quick      quick (~3-5 h incl. setup) or full (~10-14 h, resumes across sessions)
 #   INSTANCE_TYPES="g6.2xlarge g5.2xlarge"   tried in order, in every us-east-1 zone that offers them, until one has
 #                      capacity (g6 = L4 24 GB ~$0.98/h, g5 = A10G 24 GB ~$1.21/h; both need 8 G/VT vCPUs)
-#   IDLE_MIN=20        stop after this many idle minutes (no run in progress, GPU < 5 %, low CPU load)
-#   MAX_HOURS=8        stop after this many hours of uptime per boot, whatever is running
+#   IDLE_MIN=20        terminate after this many idle minutes (no run in progress, GPU < 5 %, low CPU load)
+#   MAX_HOURS=8        terminate after this many hours of uptime per boot, whatever is running
 #   METHOD_TIMEOUT=3h  time limit per method and benchmark
 #   METHODS="a b"    run only these methods; ONLY=mvs|stereo|pointcloud runs one benchmark
 #   RESET="a b"      (rerun) discard these methods' earlier results first, locally and in S3; RESET=all for everything
-#   AUTO_STOP=1        stop right after the run finishes, success or failure (0 = leave it to the watchdog)
-#   SPOT=0             1 = spot instance (cheaper, can be interrupted; the run resumes on rerun)
+#   AUTO_STOP=1        terminate right after the run finishes, success or failure (0 = leave it to the watchdog)
+#   SPOT=0             1 = spot instance (cheaper, can be interrupted; `rerun` resumes from S3)
 #   BRANCH=multi-view-stereo   branch of github.com/nadurthi/computervision to run
 #   DISK_GB=500
 #   AWS_PROFILE        the usual AWS CLI profile selection
 #
-# The automatic stop is always on: bootstrap.sh installs mvs-watchdog.sh as a systemd service (idle + max-uptime
-# stop on every boot), each method runs under a timeout, the instance shuts itself down when the run ends, and the
-# user data schedules a hard shutdown after MAX_HOURS before doing anything else.
+# S3 is the only persistent storage. The instance and its disk are disposable: every shutdown terminates the
+# instance and deletes its EBS volume. Results are synced to s3://<bucket>/results/ every 5 minutes and downloads to
+# s3://<bucket>/cache/, so a later `launch`/`rerun` resumes where the last one stopped (environments and model repos
+# are rebuilt, ~35 min). The automatic shutdown is always on: bootstrap.sh installs mvs-watchdog.sh as a systemd
+# service (idle + max-uptime), each method runs under a timeout, the instance shuts itself down when the run ends,
+# and the user data schedules a hard shutdown after MAX_HOURS before doing anything else.
 set -euo pipefail
 
 REGION=us-east-1
@@ -145,13 +148,13 @@ cmd_quota() {
 
 cmd_launch() {
   local id; id=$(instance_id)
-  if [ -n "$id" ]; then log "instance already exists: $id (use rerun, stop or terminate)"; return; fi
+  if [ -n "$id" ]; then log "instance already exists: $id (use rerun or terminate)"; return; fi
   ensure_bucket; ensure_role
   local sg ami ud market=()
   sg=$(ensure_sg)
   ami=$(aws ssm get-parameter --name "$AMI_PARAM" --query Parameter.Value --output text)
   ud=$(user_data_file)
-  [ "$SPOT" = "1" ] && market=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=persistent,InstanceInterruptionBehavior=stop}')
+  [ "$SPOT" = "1" ] && market=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
   local vpc; vpc=$(aws ec2 describe-vpcs --filters Name=isDefault,Values=true --query 'Vpcs[0].VpcId' --output text)
   id=""
   for itype in $INSTANCE_TYPES; do
@@ -166,7 +169,7 @@ cmd_launch() {
         if id=$(aws ec2 run-instances --image-id "$ami" --instance-type "$itype" --count 1 \
             --iam-instance-profile "Name=$NAME" \
             --network-interfaces "DeviceIndex=0,SubnetId=$subnet,Groups=$sg,AssociatePublicIpAddress=true" \
-            --user-data "file://$ud" --instance-initiated-shutdown-behavior stop \
+            --user-data "file://$ud" --instance-initiated-shutdown-behavior terminate \
             --metadata-options HttpTokens=required \
             --block-device-mappings "DeviceName=/dev/sda1,Ebs={VolumeSize=$DISK_GB,VolumeType=gp3,Throughput=500,Iops=6000,DeleteOnTermination=true}" \
             --tag-specifications "ResourceType=instance,Tags=[{$TAGS},{Key=Name,Value=$NAME}]" "ResourceType=volume,Tags=[{$TAGS}]" \
@@ -187,17 +190,17 @@ cmd_launch() {
   done
   if [ -z "$id" ]; then log "no capacity for any of: $INSTANCE_TYPES (try later, or SPOT=1)"; rm -f "$ud"; exit 1; fi
   rm -f "$ud"
-  log "launched $id. Auto-stop: after the run, after ${IDLE_MIN} idle min, or after ${MAX_HOURS} h."
+  log "launched $id. Auto-terminate (disk deleted, S3 kept): after the run, after ${IDLE_MIN} idle min, or after ${MAX_HOURS} h."
   log "progress: $0 status    shell: $0 shell"
 }
 
-cmd_rerun() {     # a later session: same instance + disk (envs, datasets, partial results), latest code
-  local id; id=$(instance_id)
-  [ -z "$id" ] && { log "no instance; run: $0 launch"; exit 1; }
-  if [ "$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].State.Name' --output text)" != "running" ]; then
-    aws ec2 start-instances --instance-ids "$id" >/dev/null
-    aws ec2 wait instance-running --instance-ids "$id"
-    log "started $id"
+cmd_rerun() {     # resume: restart the job on a running instance, or launch a fresh one that resumes from S3
+  local id; id=$(instance_id pending,running)
+  if [ -z "$id" ]; then
+    local old; old=$(instance_id stopping,stopped)
+    [ -n "$old" ] && { log "terminating leftover stopped instance $old"; aws ec2 terminate-instances --instance-ids "$old" >/dev/null; }
+    log "no running instance: launching a fresh one; finished methods and downloads come back from S3"
+    cmd_launch; return
   fi
   wait_ssm "$id"
   # stop a job that is still running (e.g. from boot, on older code) so two runs never share the disk; the shutdown
@@ -243,10 +246,6 @@ cmd_shell() {
   aws ssm start-session --target "$id"
 }
 
-cmd_stop() {
-  local id; id=$(instance_id pending,running)
-  [ -n "$id" ] && aws ec2 stop-instances --instance-ids "$id" >/dev/null && log "stopping $id" || log "nothing running"
-}
 
 cmd_terminate() {
   local id; id=$(instance_id)
@@ -274,8 +273,7 @@ case "${1:-}" in
   status) cmd_status ;;
   fetch) shift; cmd_fetch "${1:-}" ;;
   shell) cmd_shell ;;
-  stop) cmd_stop ;;
-  terminate) cmd_terminate ;;
+  stop|terminate) cmd_terminate ;;
   cleanup) cmd_cleanup ;;
-  *) sed -n '2,30p' "$0"; exit 1 ;;
+  *) sed -n '2,35p' "$0"; exit 1 ;;
 esac

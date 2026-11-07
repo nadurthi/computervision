@@ -295,8 +295,8 @@ bash scripts/run_benchmark.sh quick /opt/mvs      # Ubuntu 22.04 + NVIDIA GPU; o
 ./launch_mvs_ec2.sh launch                 # g6.2xlarge (L4), falls back to g5.2xlarge (A10G)
 ./launch_mvs_ec2.sh status                 # progress via SSM, no SSH
 ./launch_mvs_ec2.sh fetch ./mvs_results    # RESULTS.md, report.html, figures
-./launch_mvs_ec2.sh rerun                  # same disk, resumes unfinished methods</code></pre>
-<p>The instance stops itself when the run ends, after 20 idle minutes, or after 8 hours. A quick run is about 3–5 hours on first setup (most of it downloading DTU depth maps) and well under that afterwards.</p>
+./launch_mvs_ec2.sh rerun                  # fresh instance, resumes unfinished methods from S3</code></pre>
+<p>The instance is disposable: it terminates itself (disk included) when the run ends, after 20 idle minutes, or after 8 hours, and S3 is the only persistent storage. A quick run is about 3–5 hours on first setup (most of it downloading DTU depth maps) and well under that afterwards.</p>
 
 <p class="footnote">Datasets: DTU MVS (Aanæs et al.), ETH3D (Schöps et al.), Middlebury (Scharstein et al.), KITTI 2015 (Menze &amp; Geiger), BlendedMVS (Yao et al.). Methods' code and weights belong to their authors and are downloaded from the official repositories. Related: <a href="/tutorials/algorithms/stereo/">Stereo &amp; disparity</a> · <a href="/tutorials/algorithms/bundle-adjustment/">Bundle adjustment</a> · <a href="/tutorials/applications/carton-wall-perception/">Unloading a box wall</a> · <a href="/tutorials/applications/">back to Applications</a>.</p>
 

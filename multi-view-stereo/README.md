@@ -44,10 +44,10 @@ python scripts/make_synthetic_data.py /tmp/mvs_smoke/data
 SKIP_SETUP=1 DEVICE=cpu MODELS_PYTHON=python3 bash scripts/run_benchmark.sh smoke /tmp/mvs_smoke
 ```
 
-**On AWS** (GPU instance, auto-stop, S3 cache of datasets/weights and results): see [`aws/README.md`](aws/README.md).
+**On AWS** (disposable GPU instance that terminates itself; S3 is the only persistent storage: dataset/weight cache and results): see [`aws/README.md`](aws/README.md).
 
 ```bash
-cd aws && ./launch_mvs_ec2.sh launch      # then: status, fetch ./mvs_results, rerun, stop, cleanup
+cd aws && ./launch_mvs_ec2.sh launch      # then: status, fetch ./mvs_results, rerun, terminate, cleanup
 ```
 
 ## Layout
