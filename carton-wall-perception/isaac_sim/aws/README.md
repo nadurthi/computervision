@@ -51,6 +51,11 @@ Settings, as environment variables for the `.sh` launcher or flags for the `.py`
 | `AUTO_STOP=0` | `--no-auto-stop` | on | skip (1) only; (2) and (3) still apply |
 | `SPOT=1` | `--spot` | off | spot instance, cheaper but interruptible |
 
+**Driver.** Isaac Sim 5.1 is validated on the NVIDIA **580** production driver. Newer DLAMI builds ship 595, on
+which the 5.1 renderer segfaults at startup, so both launchers pin the AMI by name to the 20260619 build
+(driver 580.159.04). Override with `AMI_NAME=latest` / `--ami-name latest`. Every run also starts with
+`smoke_test.py` (one cube, one camera, one PNG) so a broken GPU stack shows up before the real scripts.
+
 **Before the first launch:** the EC2 quota *Running On-Demand G and VT instances* in us-east-1 must be at least
 8 vCPUs (new accounts have 0; request it in the Service Quotas console).
 

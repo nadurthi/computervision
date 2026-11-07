@@ -41,6 +41,10 @@ REGION = "us-east-1"
 NAME = "isaac-boxwall"
 INSTANCE_TYPE = "g6.2xlarge"
 AMI_PARAM = "/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id"
+# Isaac Sim 5.1 is validated on the NVIDIA 580 production driver; DLAMI builds from autumn 2026 ship 595, on which
+# the 5.1 RTX renderer segfaults at startup (librtx.scenedb). So the AMI is pinned by name to a 580 build:
+# 20260619 ships driver 580.159.04. Set AMI_NAME=latest to use the newest DLAMI instead.
+AMI_NAME = "Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) 20260619"
 REPO = "https://github.com/nadurthi/computervision"
 TAGS = [{"Key": "Project", "Value": NAME}]
 
@@ -143,7 +147,13 @@ def launch(a):
     ensure_bucket()
     profile = ensure_role()
     sg = ensure_security_group()
-    ami = ssm.get_parameter(Name=AMI_PARAM)["Parameter"]["Value"]
+    if a.ami_name == "latest":
+        ami = ssm.get_parameter(Name=AMI_PARAM)["Parameter"]["Value"]
+    else:
+        imgs = ec2.describe_images(Owners=["amazon"], Filters=[{"Name": "name", "Values": [a.ami_name]}])["Images"]
+        if not imgs:
+            sys.exit(f"AMI '{a.ami_name}' not found in {REGION}")
+        ami = imgs[0]["ImageId"]
     print("AMI", ami)
     market = {"MarketType": "spot", "SpotOptions": {"SpotInstanceType": "one-time",
                                                     "InstanceInterruptionBehavior": "terminate"}} if a.spot else None
@@ -299,6 +309,8 @@ if __name__ == "__main__":
     p.add_argument("--no-auto-stop", dest="auto_stop", action="store_false",
                    help="do not stop right after the run (the idle/uptime watchdog still applies)")
     p.add_argument("--image", default="nvcr.io/nvidia/isaac-sim:5.1.0")
+    p.add_argument("--ami-name", default=AMI_NAME,
+                   help="DLAMI name; default is a build with NVIDIA driver 580 (Isaac Sim 5.1 crashes on 595); latest = newest")
     p.add_argument("--idle-minutes", type=int, default=20, help="stop after this many idle minutes (default 20)")
     p.add_argument("--max-hours", type=int, default=4, help="hard limit on uptime per boot (default 4)")
     p.add_argument("--step-timeout", default="90m", help="time limit for each Isaac script (default 90m)")

@@ -28,6 +28,12 @@ systemctl daemon-reload
 systemctl enable --now isaac-watchdog.service
 
 for i in $(seq 1 30); do nvidia-smi && break; sleep 10; done
+DRIVER=$(nvidia-smi --query-gpu=driver_version --format=csv,noheader | head -1)
+echo "NVIDIA driver $DRIVER, image $ISAAC_IMAGE"
+case "$ISAAC_IMAGE:$DRIVER" in
+  *isaac-sim:5.*:580.*) ;;
+  *isaac-sim:5.*) echo "WARNING: Isaac Sim 5.x is validated on the 580 driver branch; $DRIVER may crash the RTX renderer" ;;
+esac
 
 ISAAC_IMAGE="$ISAAC_IMAGE" STEP_TIMEOUT="$STEP_TIMEOUT" bash "$HERE/run_on_ec2.sh" "s3://$BUCKET/runs"
 echo "run exit code: $?"

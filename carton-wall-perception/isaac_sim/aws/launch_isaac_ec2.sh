@@ -16,6 +16,7 @@
 #   AUTO_STOP=1        stop right after the run finishes, success or failure (0 = leave it to the watchdog)
 #   SPOT=0             1 = spot instance (cheaper, can be interrupted)
 #   ISAAC_IMAGE=nvcr.io/nvidia/isaac-sim:5.1.0
+#   AMI_NAME=...20260619  DLAMI build with NVIDIA driver 580 (Isaac Sim 5.1 crashes on 595); 'latest' = newest
 #   AWS_PROFILE        the usual AWS CLI profile selection
 #
 # The automatic stop is always on. On the instance, bootstrap.sh installs isaac-watchdog.sh as a systemd service
@@ -30,6 +31,10 @@ REGION=us-east-1
 NAME=isaac-boxwall
 INSTANCE_TYPE=g6.2xlarge
 AMI_PARAM=/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id
+# Isaac Sim 5.1 is validated on the NVIDIA 580 production driver; DLAMI builds from autumn 2026 ship 595, on which
+# the 5.1 RTX renderer segfaults at startup (librtx.scenedb). So the AMI is pinned by name to a 580 build:
+# 20260619 ships driver 580.159.04. Set AMI_NAME=latest to use the newest DLAMI instead.
+AMI_NAME=${AMI_NAME:-"Deep Learning Base OSS Nvidia Driver GPU AMI (Ubuntu 22.04) 20260619"}
 REPO=https://github.com/nadurthi/computervision
 CODE_DIR=/opt/isaac/computervision/carton-wall-perception/isaac_sim/aws
 IDLE_MIN=${IDLE_MIN:-20}; MAX_HOURS=${MAX_HOURS:-4}; STEP_TIMEOUT=${STEP_TIMEOUT:-90m}
@@ -130,7 +135,13 @@ cmd_launch() {
   ensure_bucket; ensure_role
   local sg ami ud market=()
   sg=$(ensure_sg)
-  ami=$(aws ssm get-parameter --name "$AMI_PARAM" --query Parameter.Value --output text)
+  if [ "$AMI_NAME" = "latest" ]; then
+    ami=$(aws ssm get-parameter --name "$AMI_PARAM" --query Parameter.Value --output text)
+  else
+    ami=$(aws ec2 describe-images --owners amazon --filters "Name=name,Values=$AMI_NAME" \
+          --query 'Images[0].ImageId' --output text)
+    [ "$ami" = "None" ] && { log "AMI '$AMI_NAME' not found in $REGION"; exit 1; }
+  fi
   ud=$(user_data_file)
   # Spot: one-time request, so a shutdown terminates (results are already in S3); `rerun` then means `launch` again.
   local shutdown_behavior=stop
