@@ -80,7 +80,11 @@ class PlaneSweep:
         pix = torch.stack([u.reshape(-1), v.reshape(-1), torch.ones(h * w, device=dev)])  # 3,P
         Kr_inv = torch.from_numpy(np.linalg.inv(Ks[0])).float().to(dev)
         rays = Kr_inv @ pix
-        costs = []
+        # aggregate source by source so memory stays at a few cost volumes whatever N is
+        n_src = len(images) - 1
+        k = min(self.k, n_src)
+        use_mean = self.agg == "mean" or n_src == 1
+        acc = cnt = best = None
         for img, K, E in zip(images[1:], Ks[1:], Es[1:]):
             T = torch.from_numpy(E @ np.linalg.inv(Es[0])).float().to(dev)
             Kt = torch.from_numpy(K).float().to(dev)
@@ -99,15 +103,21 @@ class PlaneSweep:
                 warped = F.grid_sample(src.expand(len(z), -1, -1, -1), grid, align_corners=True, padding_mode="zeros")
                 valid = ((zz > 0) & (x >= 0) & (x <= ws - 1) & (y >= 0) & (y <= hs - 1)).view(-1, 1, h, w)
                 cs[k0:k0 + len(z)] = zncc_cost(ref.expand(len(z), -1, -1, -1), warped, valid, self.r)[:, 0]
-            costs.append(cs)
-        C = torch.stack(costs)                                                  # S,D,H,W
-        if self.agg == "mean" or C.shape[0] == 1:
-            seen = (C < 2.0).float()
-            vol = (C * seen).sum(0) / seen.sum(0).clamp(min=1)
-            vol = torch.where(seen.sum(0) > 0, vol, torch.full_like(vol, 2.0))
+            if use_mean:
+                seen = (cs < 2.0).float()
+                acc = cs * seen if acc is None else acc + cs * seen
+                cnt = seen if cnt is None else cnt + seen
+            elif best is None or best.shape[0] < k:                             # the K lowest costs seen so far
+                best = cs[None] if best is None else torch.cat([best, cs[None]])
+            else:
+                best = torch.topk(torch.cat([best, cs[None]]), k, dim=0, largest=False).values
+            del cs
+        if use_mean:
+            vol = torch.where(cnt > 0, acc / cnt.clamp(min=1), torch.full_like(acc, 2.0))
+            del acc, cnt
         else:
-            k = min(self.k, C.shape[0])
-            vol = torch.topk(C, k, dim=0, largest=False).values.mean(0)
+            vol = best.mean(0)
+            del best
         if self.use_sgm:
             vol = sgm(vol, self.p1, self.p2)
         idx = vol.argmin(0)
