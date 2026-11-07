@@ -501,8 +501,12 @@ def main():
                 m = UsdGeom.Xformable(stage.GetPrimAtPath(b["prim"])).ComputeLocalToWorldTransform(Usd.TimeCode.Default())
                 b["position_m"] = list(m.ExtractTranslation())
                 b["rotation_matrix"] = [list(m.ExtractRotationMatrix().GetRow(r)) for r in range(3)]
-        for _ in range(4):                                    # make sure annotators hold this frame
+        for _ in range(4):
             world.step(render=True)
+        for _ in range(5):                                    # annotators fill on a replicator step
+            rep.orchestrator.step(rt_subframes=4)
+            if np.asarray(anns["rgb"].get_data()).ndim == 3:
+                break
         save_frame(i, anns, lidar_ann)
         all_boxes[f"{i:04d}"] = boxes
     json.dump(all_boxes, open(os.path.join(args.out, "boxes.json"), "w"), indent=1)
@@ -514,7 +518,14 @@ def main():
 
 
 if __name__ == "__main__":
+    import traceback
+    ok = False
     try:
         main()
+        ok = True
+    except Exception:
+        traceback.print_exc()
     finally:
+        sys.stdout.flush()
         simulation_app.close()
+        os._exit(0 if ok else 1)      # never leave Kit running after an error (it can hang on exit)

@@ -565,8 +565,14 @@ def make_sensors(stage_):
 def record(anns, k):
     if anns is None:
         return
+    import omni.replicator.core as rep
     from PIL import Image
-    Image.fromarray(np.asarray(anns["rgb"].get_data())[..., :3]).save(os.path.join(args.record, f"rgb_{k:03d}.png"))
+    for _ in range(5):                                        # annotators fill on a replicator step
+        rep.orchestrator.step(rt_subframes=4)
+        if np.asarray(anns["rgb"].get_data()).ndim == 3:
+            break
+    Image.fromarray(np.asarray(anns["rgb"].get_data())[..., :3].astype(np.uint8)).save(
+        os.path.join(args.record, f"rgb_{k:03d}.png"))
     np.save(os.path.join(args.record, f"depth_{k:03d}.npy"), np.asarray(anns["depth"].get_data(), np.float32))
     seg = anns["instance"].get_data()
     Image.fromarray(np.asarray(seg["data"]).astype(np.uint16)).save(os.path.join(args.record, f"instance_{k:03d}.png"))
@@ -665,7 +671,15 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    import traceback
+    ok = False
     try:
         main()
+        ok = True
+    except Exception:
+        traceback.print_exc()
     finally:
+        sys.stdout.flush()
         simulation_app.close()
+        os._exit(0 if ok else 1)      # never leave Kit running after an error (it can hang on exit)
