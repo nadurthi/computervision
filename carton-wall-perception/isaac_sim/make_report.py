@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover - optional
     plt = None
 
 RUN = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
-TAGS = re.compile(r"\[(smoke|lidar-test|box-wall|cell)\]")
+TAGS = re.compile(r"\[(smoke|lidar-test|box-wall|cell|trailer)\]")
 ERRS = re.compile(r"Traceback|Error: |Segmentation fault|There was an error running python|ErrorException")
 
 
@@ -144,7 +144,7 @@ def steps():
 def section_overview():
     rows = []
     st = steps()
-    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell"):
+    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell", "trailer_wall"):
         s = log_summary(name)
         if s is None:
             continue
@@ -252,9 +252,30 @@ def section_cell():
     return "".join(out) if (s or os.path.isdir(d)) else ""
 
 
+def section_trailer():
+    d = os.path.join(RUN, "trailer_wall")
+    p = os.path.join(d, "rgb.png")
+    if not os.path.exists(p):
+        return ""
+    rgb = np.asarray(Image.open(p).convert("RGB"))
+    figs = [f"<figure>{img_tag(Image.fromarray(rgb), 900, 'trailer wall', rel(p))}<figcaption>RGB</figcaption></figure>"]
+    ip = os.path.join(d, "instance.png")
+    if os.path.exists(ip):
+        ids = np.asarray(Image.open(ip))
+        figs.append(f"<figure>{img_tag(overlay(Image.fromarray(rgb), colorize_ids(ids)), 900, 'instances')}"
+                    f"<figcaption>instance masks</figcaption></figure>")
+    info = ""
+    bp = os.path.join(d, "boxes.json")
+    if os.path.exists(bp):
+        import json
+        b = json.load(open(bp))
+        info = f"<p>{len(b)} boxes; models: {', '.join(sorted({x.get('model', '?') for x in b}))[:300]}</p>"
+    return "<h2>Trailer wall</h2>" + info + "<div class='row'>" + "".join(figs) + "</div>"
+
+
 def section_logs():
     out = ["<h2>Log excerpts</h2>"]
-    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell"):
+    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell", "trailer_wall"):
         s = log_summary(name)
         if s is None:
             continue
@@ -284,7 +305,7 @@ code{font-size:12px}"""
 def main():
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = [f"<h1>Isaac Sim box-wall run</h1><p>{html.escape(os.path.basename(RUN))} · report built {when}</p>",
-            section_overview(), section_smoke(), section_box_wall(), section_cell(), section_logs()]
+            section_overview(), section_smoke(), section_box_wall(), section_cell(), section_trailer(), section_logs()]
     out = os.path.join(RUN, "report.html")
     with open(out, "w") as f:
         f.write(f"<!doctype html><html><head><meta charset='utf-8'><title>Isaac box-wall run</title>"

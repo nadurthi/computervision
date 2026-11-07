@@ -118,7 +118,8 @@ CODE_DIR = "/opt/isaac/computervision/carton-wall-perception/isaac_sim/aws"
 def env_line(a):
     """Settings passed to bootstrap.sh on the instance (same as launch_isaac_ec2.sh)."""
     return (f"BUCKET={BUCKET} IDLE_MIN={a.idle_minutes} MAX_HOURS={a.max_hours} STEP_TIMEOUT={a.step_timeout} "
-            f"ISAAC_IMAGE={a.image} AUTO_STOP={1 if a.auto_stop else 0}")
+            f"ISAAC_IMAGE={a.image} AUTO_STOP={1 if a.auto_stop else 0}"
+            + (f" STEPS='{a.steps}'" if getattr(a, "steps", None) else ""))
 
 
 def user_data(a):
@@ -294,6 +295,8 @@ def add_launch_args(p):
     p.add_argument("--idle-minutes", type=int, default=20, help="stop after this many idle minutes (default 20)")
     p.add_argument("--max-hours", type=int, default=4, help="hard limit on uptime per boot (default 4)")
     p.add_argument("--step-timeout", default="90m", help="time limit for each Isaac script (default 90m)")
+    p.add_argument("--steps", default=None,
+                   help="run only these run_all.sh steps, e.g. 'trailer_wall' or 'smoke box_wall' (default: all)")
 
 
 if __name__ == "__main__":

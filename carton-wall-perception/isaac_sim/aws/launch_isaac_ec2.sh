@@ -16,6 +16,7 @@
 #   IDLE_MIN=20        stop after this many idle minutes (no run in progress, GPU < 5 %, low CPU load)
 #   MAX_HOURS=4        stop after this many hours of uptime per boot, whatever is running
 #   STEP_TIMEOUT=90m   time limit for each Isaac script
+#   STEPS='...'        run only these run_all.sh steps, e.g. STEPS='trailer_wall' (default: all)
 #   AUTO_STOP=1        stop right after the run finishes, success or failure (0 = leave it to the watchdog)
 #   SPOT=0             1 = spot instance (cheaper, can be interrupted)
 #   ISAAC_IMAGE=nvcr.io/nvidia/isaac-sim:5.1.0
@@ -58,7 +59,7 @@ instance_id() {   # instance_id [states] -> id of our instance or empty
 }
 
 env_line() {      # settings passed to bootstrap.sh on the instance
-  echo "BUCKET=$BUCKET IDLE_MIN=$IDLE_MIN MAX_HOURS=$MAX_HOURS STEP_TIMEOUT=$STEP_TIMEOUT ISAAC_IMAGE=$ISAAC_IMAGE AUTO_STOP=$AUTO_STOP"
+  echo "BUCKET=$BUCKET IDLE_MIN=$IDLE_MIN MAX_HOURS=$MAX_HOURS STEP_TIMEOUT=$STEP_TIMEOUT ISAAC_IMAGE=$ISAAC_IMAGE AUTO_STOP=$AUTO_STOP${STEPS:+ STEPS='$STEPS'}"
 }
 
 # ------------------------------------------------------------------------------------------- resources

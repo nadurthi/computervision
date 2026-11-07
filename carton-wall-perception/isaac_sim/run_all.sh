@@ -6,6 +6,7 @@
 #   bash run_all.sh                         # everything, output in ./isaac_runs/run-<UTC time>/
 #   OUT=~/runs/test1 bash run_all.sh        # choose the output folder
 #   RUN_SCRIPTS=0 bash run_all.sh           # only the smoke and lidar tests
+#   STEPS="smoke trailer_wall" bash run_all.sh   # only these steps
 #   MODE=native ISAAC_SIM_PATH=~/isaacsim bash run_all.sh   # a local Isaac Sim install instead of Docker
 #
 # Requirements
@@ -20,6 +21,8 @@
 #   DATA=~/.cache/isaac-boxwall   assets + Isaac caches    STEP_TIMEOUT=90m  limit per script (smoke: 10m)
 #   RUN_SCRIPTS=1                 0 = tests only           EXTRA_ARGS=''     extra args for both main scripts
 #   FRAMES=3  PICKS=5             workload size            SKIP_ASSETS=0     1 = do not download SimReady assets
+#   STEPS='smoke smoke_ids lidar_test box_wall unload_cell trailer_wall'   steps to run, in this order
+#   TRAILER_ARGS=''               extra args for trailer_wall.py (e.g. '--rows 1 --yaw 8')
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="${MODE:-docker}"
@@ -86,15 +89,19 @@ isaac() {   # isaac <step-name> <script> <args...>   (runs one Isaac Python scri
 }
 
 # ---- 0) environment checks: rendering with and without RTX stable ids, and the ways of reading the lidar
-STEP_TIMEOUT=10m isaac smoke smoke_test.py --out /out/smoke
-STEP_TIMEOUT=10m isaac smoke_ids smoke_test.py --out /out/smoke_ids --stable-ids
-STEP_TIMEOUT=10m isaac lidar_test lidar_test.py --out /out/lidar_test
+STEPS="${STEPS:-smoke smoke_ids lidar_test box_wall unload_cell trailer_wall}"
+[ "${RUN_SCRIPTS:-1}" = "1" ] || STEPS="smoke smoke_ids lidar_test"
+want() { [[ " $STEPS " == *" $1 "* ]]; }
+echo "[run_all] steps: $STEPS"
+want smoke      && STEP_TIMEOUT=10m isaac smoke smoke_test.py --out /out/smoke
+want smoke_ids  && STEP_TIMEOUT=10m isaac smoke_ids smoke_test.py --out /out/smoke_ids --stable-ids
+want lidar_test && STEP_TIMEOUT=10m isaac lidar_test lidar_test.py --out /out/lidar_test
 
 # ---- 1) box wall in the warehouse (RGB, depth, masks, 2D boxes, lidar)  2) unloading cell (UR10 + conveyor)
-if [ "${RUN_SCRIPTS:-1}" = "1" ]; then
-  isaac box_wall box_wall_capture.py --frames "$FRAMES" --out /out/box_wall --box-usd-dir /simready ${EXTRA_ARGS:-}
-  isaac unload_cell unload_cell.py --simready /simready --picks "$PICKS" --record /out/unload_cell ${EXTRA_ARGS:-}
-fi
+# ---- 3) trailer wall: tightly stacked, misaligned boxes against the trailer's back wall (one image)
+want box_wall     && isaac box_wall box_wall_capture.py --frames "$FRAMES" --out /out/box_wall --box-usd-dir /simready ${EXTRA_ARGS:-}
+want unload_cell  && isaac unload_cell unload_cell.py --simready /simready --picks "$PICKS" --record /out/unload_cell ${EXTRA_ARGS:-}
+want trailer_wall && isaac trailer_wall trailer_wall.py --out /out/trailer_wall --box-usd-dir /simready ${TRAILER_ARGS:-}
 
 ls -laR "$OUT" > "$OUT/listing.txt"
 
