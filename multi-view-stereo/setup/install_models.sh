@@ -117,13 +117,18 @@ done
 
 # ------------------------------------------------------------------------------------------------ ACMMP (CUDA)
 if [ ! -x ACMMP/build/ACMMP ]; then
-  CUDA_HOME=${CUDA_HOME:-$(ls -d /usr/local/cuda 2>/dev/null || true)}
+  # ACMMP includes cuda_texture_types.h, which CUDA 13 removed: build with the newest CUDA 12.x toolkit if one is
+  # installed (the Deep Learning AMI ships several, and /usr/local/cuda may point to 13.x)
+  ACMMP_CUDA=${ACMMP_CUDA:-$(ls -d /usr/local/cuda-12.* 2>/dev/null | sort -V | tail -1)}
+  ACMMP_CUDA=${ACMMP_CUDA:-${CUDA_HOME:-/usr/local/cuda}}
+  CUDA_HOME=$ACMMP_CUDA
+  log "building ACMMP with $CUDA_HOME"
   CC_ARCH=$(nvidia-smi --query-gpu=compute_cap --format=csv,noheader 2>/dev/null | head -1 | tr -d '.')
   CC_ARCH=${CC_ARCH:-89}
   sed -i "s#set(CUDA_TOOLKIT_ROOT_DIR .*)#set(CUDA_TOOLKIT_ROOT_DIR \"$CUDA_HOME\")#" ACMMP/CMakeLists.txt
   sed -i "s#-gencode arch=compute_[0-9]*,code=sm_[0-9]*#-gencode arch=compute_${CC_ARCH},code=sm_${CC_ARCH}#" ACMMP/CMakeLists.txt
   sed -i "s#-std=c++11#-std=c++14#g" ACMMP/CMakeLists.txt
-  mkdir -p ACMMP/build && (cd ACMMP/build && cmake .. -DCMAKE_BUILD_TYPE=Release >/dev/null && make -j"$(nproc)" >/dev/null) \
+  mkdir -p ACMMP/build && (cd ACMMP/build && rm -rf ./* && cmake .. -DCMAKE_BUILD_TYPE=Release -DCUDA_TOOLKIT_ROOT_DIR="$CUDA_HOME" >/dev/null && make -j"$(nproc)" >/dev/null) \
     && log "built ACMMP" || log "WARNING: ACMMP build failed (acmmp will be skipped)"
 fi
 
