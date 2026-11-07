@@ -45,7 +45,7 @@ esac
 if [ "${SKIP_ASSETS:-0}" != "1" ]; then
   python3 -c "import huggingface_hub" 2>/dev/null || python3 -m pip install -q --user huggingface_hub 2>/dev/null \
     || python3 -m pip install -q --break-system-packages huggingface_hub
-  python3 "$HERE/download_simready_assets.py" --out "$DATA/simready" > "$OUT/simready_download.txt" 2>&1 \
+  python3 "$HERE/download_simready_assets.py" --out "$DATA/simready" --all-cartons > "$OUT/simready_download.txt" 2>&1 \
     || echo "[run_all] SimReady download failed; the scripts fall back to Isaac or procedural boxes"
 fi
 

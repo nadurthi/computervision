@@ -4,8 +4,8 @@ box has its own depth, a small push in or out, and a small yaw, the way a real h
 
 The scene is static (no physics), so the wall looks exactly as generated: nothing topples while it settles.
 
-    ./python.sh trailer_wall.py --out trailer_out                       # 1 image, procedural cardboard
-    ./python.sh trailer_wall.py --out trailer_out --box-usd-dir ~/simready   # NVIDIA SimReady box models
+    python download_simready_assets.py --out ~/simready --all-cartons   # ~80 NVIDIA SimReady carton models
+    ./python.sh trailer_wall.py --out trailer_out --box-usd-dir ~/simready   # 1 image
     ./python.sh trailer_wall.py --gui                                    # look around in the Isaac Sim window
 
 Outputs (in --out):
@@ -29,8 +29,8 @@ ap.add_argument("--out", default="trailer_out")
 ap.add_argument("--gui", action="store_true")
 ap.add_argument("--seed", type=int, default=7)
 ap.add_argument("--res", type=int, nargs=2, default=[1920, 1080])
-ap.add_argument("--box-usd-dir", default=None,
-                help="folder with cardboard box USDs (e.g. the SimReady download); default: procedural cardboard")
+ap.add_argument("--box-usd-dir", default=os.path.expanduser("~/simready"),
+                help="SimReady download folder (download_simready_assets.py --all-cartons); procedural boxes only if empty")
 ap.add_argument("--size-min", type=float, default=0.30, help="smallest box edge")
 ap.add_argument("--size-max", type=float, default=0.62, help="largest box edge")
 ap.add_argument("--cube-ness", type=float, default=0.15,
@@ -147,12 +147,47 @@ def build_lights(stage):
 
 # ------------------------------------------------------------------------------------------ boxes
 def box_assets():
+    """One USD per SimReady carton folder (<name>/simready_usd/sm_<name>*.usd), or any USDs in --box-usd-dir."""
     if not args.box_usd_dir:
         return []
-    f = sorted(glob.glob(os.path.join(args.box_usd_dir, "box_*", "simready_usd", "sm_*_01.usd")))
+    f = []
+    for d in sorted(glob.glob(os.path.join(args.box_usd_dir, "box_*", "simready_usd"))):
+        name = os.path.basename(os.path.dirname(d))
+        if any(k in name for k in ("_open", "_folded", "_flat", "_long", "_glove", "_paper_office", "composition")):
+            continue                                          # not closed shipping cartons
+        c = sorted(glob.glob(os.path.join(d, f"sm_{name}*.usd*"))) or sorted(glob.glob(os.path.join(d, "*.usd*")))
+        if c:
+            f.append(c[0])
     if not f:
         f = sorted(glob.glob(os.path.join(args.box_usd_dir, "**", "*.usd*"), recursive=True))
     return f
+
+
+def measure_assets(stage, urls):
+    """Native bounding-box size of each model (referenced once under a scratch prim, then removed)."""
+    out = []
+    for k, url in enumerate(urls):
+        path = f"/World/_probe{k}"
+        try:
+            UsdGeom.Xform.Define(stage, path).GetPrim().GetReferences().AddReference(url)
+            ext = np.array(bounds(stage.GetPrimAtPath(path)).GetSize(), float)
+            if np.all(ext > 1e-6):
+                if ext.max() > 20:                            # authored in centimetres
+                    ext = ext / 100.0
+                out.append((url, ext))
+        except Exception as e:
+            print(f"[trailer] cannot load {url}: {e}")
+        stage.RemovePrim(path)
+    return out
+
+
+def pick_model(models, size, k=4):
+    """Random choice among the k models whose proportions are closest to `size` (least stretching of the print).
+    Distance = spread of log(target/native) over the three axes, so overall scale does not matter."""
+    t = np.log(np.asarray(size, float))
+    cost = [np.ptp(t - np.log(ext)) for _, ext in models]
+    best = np.argsort(cost)[:k]
+    return models[int(rng.choice(best))][0]
 
 
 def cardboard_materials(stage):
@@ -245,7 +280,11 @@ def plan_wall(rng, a):
 
 
 def build_wall(stage):
-    assets = box_assets()
+    models = measure_assets(stage, box_assets())
+    if models:
+        print(f"[trailer] {len(models)} SimReady carton models")
+    else:
+        print("[trailer] WARNING: no SimReady cartons found (--box-usd-dir); using procedural cardboard boxes")
     cards = cardboard_materials(stage)
     tape = material(stage, "/World/Looks/Tape", (0.72, 0.58, 0.40), 0.35)
     UsdGeom.Xform.Define(stage, "/World/Boxes")
@@ -259,8 +298,8 @@ def build_wall(stage):
         xf.AddTranslateOp().Set(Gf.Vec3d(cx, cy, cz - h / 2 + 0.001))
         xf.AddRotateZOp().Set(b["yaw_deg"])
         used = "procedural"
-        if assets:
-            url = assets[rng.integers(len(assets))]
+        if models:
+            url = pick_model(models, (d, w, h))
             try:
                 referenced_box(stage, path, url, (d, w, h))
                 used = os.path.basename(url)
