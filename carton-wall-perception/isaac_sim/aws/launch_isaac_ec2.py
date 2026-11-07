@@ -158,9 +158,9 @@ def launch(a):
             sys.exit(f"AMI '{a.ami_name}' not found in {REGION}")
         ami = imgs[0]["ImageId"]
     print("AMI", ami)
-    market = {"MarketType": "spot", "SpotOptions": {"SpotInstanceType": "one-time",
-                                                    "InstanceInterruptionBehavior": "terminate"}} if a.spot else None
-    kw = dict(ImageId=ami, InstanceType=INSTANCE_TYPE, MinCount=1, MaxCount=1,
+    spot_opts = {"MarketType": "spot", "SpotOptions": {"SpotInstanceType": "one-time",
+                                                       "InstanceInterruptionBehavior": "terminate"}}
+    kw = dict(ImageId=ami, MinCount=1, MaxCount=1,
               IamInstanceProfile={"Name": profile}, SecurityGroupIds=[sg],
               UserData=user_data(a),
               # any shutdown terminates and deletes the disk: results live only in S3
@@ -170,42 +170,52 @@ def launch(a):
               MetadataOptions={"HttpTokens": "required"},
               TagSpecifications=[{"ResourceType": "instance", "Tags": TAGS + [{"Key": "Name", "Value": NAME}]},
                                  {"ResourceType": "volume", "Tags": TAGS}])
-    if market:
-        kw["InstanceMarketOptions"] = market
-    # GPU capacity varies by availability zone: try each default subnet that offers the instance type
+    # GPU capacity comes and goes: g6.2xlarge on-demand -> g6.2xlarge spot -> g5.2xlarge on-demand -> g5.2xlarge spot
+    # (--spot starts at spot; --no-fallback tries only the first option)
+    plans = [(INSTANCE_TYPE, a.spot)]
+    if not a.no_fallback:
+        plans += [p for p in [(INSTANCE_TYPE, True), ("g5.2xlarge", False), ("g5.2xlarge", True)] if p not in plans]
     vpc = ec2.describe_vpcs(Filters=[{"Name": "isDefault", "Values": ["true"]}])["Vpcs"][0]["VpcId"]
-    zones = {o["Location"] for o in ec2.describe_instance_type_offerings(
-        LocationType="availability-zone", Filters=[{"Name": "instance-type", "Values": [INSTANCE_TYPE]}])["InstanceTypeOfferings"]}
-    subnets = sorted((s["AvailabilityZone"], s["SubnetId"]) for s in ec2.describe_subnets(Filters=[
-        {"Name": "vpc-id", "Values": [vpc]}, {"Name": "default-for-az", "Values": ["true"]}])["Subnets"]
-        if s["AvailabilityZone"] in zones)
+    all_subnets = ec2.describe_subnets(Filters=[{"Name": "vpc-id", "Values": [vpc]},
+                                                {"Name": "default-for-az", "Values": ["true"]}])["Subnets"]
     iid = None
-    for az, subnet in subnets:
-        kw["SubnetId"] = subnet
-        for attempt in range(10):
-            try:
-                iid = ec2.run_instances(**kw)["Instances"][0]["InstanceId"]
-                break
-            except ClientError as e:
-                if "MaxSpotInstanceCountExceeded" in str(e) and attempt < 9:   # quota still held by a terminating spot instance
-                    print("spot quota still held by a terminating instance; retrying in 30 s")
-                    time.sleep(30)
-                    continue
-                if "Invalid IAM Instance Profile" in str(e) and attempt < 9:
-                    time.sleep(10)
-                    continue
-                if "InsufficientInstanceCapacity" in str(e):
-                    print(f"no capacity in {az}, trying the next zone")
+    for itype, spot in plans:
+        kw["InstanceType"] = itype
+        kw.pop("InstanceMarketOptions", None)
+        if spot:
+            kw["InstanceMarketOptions"] = spot_opts
+        zones = {o["Location"] for o in ec2.describe_instance_type_offerings(
+            LocationType="availability-zone", Filters=[{"Name": "instance-type", "Values": [itype]}])["InstanceTypeOfferings"]}
+        subnets = sorted((s["AvailabilityZone"], s["SubnetId"]) for s in all_subnets if s["AvailabilityZone"] in zones)
+        print(f"trying {itype}{' (spot)' if spot else ''}")
+        for az, subnet in subnets:
+            kw["SubnetId"] = subnet
+            for attempt in range(10):
+                try:
+                    iid = ec2.run_instances(**kw)["Instances"][0]["InstanceId"]
                     break
-                if "VcpuLimitExceeded" in str(e):
-                    sys.exit(f"EC2 GPU quota (G and VT, {'spot' if a.spot else 'on-demand'}) too low in us-east-1; "
-                             "other GPU instances may be using it. " + str(e))
-                raise
+                except ClientError as e:
+                    if "MaxSpotInstanceCountExceeded" in str(e) and attempt < 9:   # quota held by a terminating spot instance
+                        print("spot quota still held by a terminating instance; retrying in 30 s")
+                        time.sleep(30)
+                        continue
+                    if "Invalid IAM Instance Profile" in str(e) and attempt < 9:
+                        time.sleep(10)
+                        continue
+                    if "InsufficientInstanceCapacity" in str(e):
+                        print(f"  no capacity in {az}")
+                        break
+                    if "VcpuLimitExceeded" in str(e):
+                        print(f"  EC2 GPU quota (G and VT, {'spot' if spot else 'on-demand'}) too low: {e}")
+                        break
+                    raise
+            if iid:
+                break
         if iid:
             break
     if not iid:
-        sys.exit(f"no zone had capacity for {INSTANCE_TYPE}; try again later or with/without --spot")
-    print(f"launched {iid} ({INSTANCE_TYPE}{', spot' if a.spot else ''}). The run takes ~30-60 min the first time.")
+        sys.exit("no capacity for any of: " + ", ".join(f"{t}{' spot' if s else ''}" for t, s in plans))
+    print(f"launched {iid} ({itype}{', spot' if spot else ''}). The run takes ~30-60 min the first time.")
     print(f"progress:  python {sys.argv[0]} status        shell:  aws ssm start-session --target {iid}")
 
 
@@ -295,6 +305,8 @@ def add_launch_args(p):
     p.add_argument("--idle-minutes", type=int, default=20, help="stop after this many idle minutes (default 20)")
     p.add_argument("--max-hours", type=int, default=4, help="hard limit on uptime per boot (default 4)")
     p.add_argument("--step-timeout", default="90m", help="time limit for each Isaac script (default 90m)")
+    p.add_argument("--no-fallback", action="store_true",
+                   help="do not fall back to spot / g5.2xlarge when there is no g6.2xlarge capacity")
     p.add_argument("--steps", default=None,
                    help="run only these run_all.sh steps, e.g. 'trailer_wall' or 'smoke box_wall' (default: all)")
 

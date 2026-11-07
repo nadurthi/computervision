@@ -16,6 +16,7 @@
 #   IDLE_MIN=20        stop after this many idle minutes (no run in progress, GPU < 5 %, low CPU load)
 #   MAX_HOURS=4        stop after this many hours of uptime per boot, whatever is running
 #   STEP_TIMEOUT=90m   time limit for each Isaac script
+#   INSTANCE_TYPE=g6.2xlarge   (falls back to spot, then g5.2xlarge, when no capacity; NO_FALLBACK=1 to disable)
 #   STEPS='...'        run only these run_all.sh steps, e.g. STEPS='trailer_wall' (default: all)
 #   AUTO_STOP=1        stop right after the run finishes, success or failure (0 = leave it to the watchdog)
 #   SPOT=0             1 = spot instance (cheaper, can be interrupted)
@@ -33,7 +34,7 @@ set -euo pipefail
 
 REGION=us-east-1
 NAME=isaac-boxwall
-INSTANCE_TYPE=g6.2xlarge
+INSTANCE_TYPE=${INSTANCE_TYPE:-g6.2xlarge}
 AMI_PARAM=/aws/service/deeplearning/ami/x86_64/base-oss-nvidia-driver-gpu-ubuntu-22.04/latest/ami-id
 # Isaac Sim 5.1 is validated on the NVIDIA 580 production driver; DLAMI builds from autumn 2026 ship 595, on which
 # the 5.1 RTX renderer segfaults at startup (librtx.scenedb). So the AMI is pinned by name to a 580 build:
@@ -183,7 +184,20 @@ cmd_launch() {
     done
   done
   rm -f "$ud"
-  [ -z "$id" ] && { log "no zone had capacity for $INSTANCE_TYPE; try again later or with/without SPOT=1"; exit 1; }
+  if [ -z "$id" ]; then
+    # GPU capacity comes and goes. Fallback chain (NO_FALLBACK=1 disables it):
+    #   g6.2xlarge on-demand -> g6.2xlarge spot -> g5.2xlarge on-demand -> g5.2xlarge spot
+    if [ "${NO_FALLBACK:-0}" != "1" ]; then
+      if [ "$SPOT" != "1" ]; then
+        log "no on-demand $INSTANCE_TYPE capacity in any zone: trying spot"
+        SPOT=1 exec "$0" launch
+      elif [ "$INSTANCE_TYPE" = "g6.2xlarge" ]; then
+        log "no g6.2xlarge capacity at all: trying g5.2xlarge (NVIDIA A10G, also RTX)"
+        INSTANCE_TYPE=g5.2xlarge SPOT=0 exec "$0" launch
+      fi
+    fi
+    log "no zone had capacity for $INSTANCE_TYPE; try again later"; exit 1
+  fi
   log "launched $id. Auto-stop: after the run, after ${IDLE_MIN} idle min, or after ${MAX_HOURS} h."
   log "progress: $0 status    shell: aws ssm start-session --target $id"
 }
