@@ -38,7 +38,7 @@ restarts and reruns; the user data schedules a hard shutdown before doing anythi
 | Phase | quick | full |
 |---|---|---|
 | environments + model repos + ACMMP build | ~35 min (first time only) | same |
-| datasets | ~25 GB, ~20-40 min | ~110 GB, ~1.5-2 h |
+| datasets | ~45 GB (28 GB is DTU depth maps from a China mirror, ~20 MB/s), ~45-60 min first time; minutes from the S3 cache afterwards | ~160 GB, ~2-3 h |
 | benchmark | ~2-3 h | ~10 h (split over two `rerun`s with MAX_HOURS=8) |
 
 g6.2xlarge on-demand is about $0.98/h, so a quick run is roughly $4-5; the 500 GB disk is ~$40/month while it exists
