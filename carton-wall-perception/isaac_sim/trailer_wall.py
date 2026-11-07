@@ -126,11 +126,13 @@ def build_trailer(stage):
     cube(stage, b + "/Nose", (L + 0.03, 0, H / 2), (0.06, W + 0.1, H), liner, "trailer")
     for side, y in (("L", W / 2 + 0.03), ("R", -W / 2 - 0.03)):
         cube(stage, f"{b}/Wall{side}", (L / 2, y, H / 2), (L, 0.06, H), liner, "trailer")
+        # posts and rails are siblings of the wall: children of a Cube (a gprim) are not rendered
+        UsdGeom.Xform.Define(stage, f"{b}/Trim{side}")
         for i, x in enumerate(np.arange(0.4, L, 0.6)):                 # vertical logistics posts
-            cube(stage, f"{b}/Wall{side}/Post{i:02d}", (x, y - np.sign(y) * 0.04, H / 2),
+            cube(stage, f"{b}/Trim{side}/Post{i:02d}", (x, y - np.sign(y) * 0.04, H / 2),
                  (0.05, 0.02, H), steel)
         for k, z in enumerate((0.9, 1.7)):                               # logistics track rails
-            cube(stage, f"{b}/Wall{side}/Rail{k}", (L / 2, y - np.sign(y) * 0.045, z), (L, 0.012, 0.12), steel)
+            cube(stage, f"{b}/Trim{side}/Rail{k}", (L / 2, y - np.sign(y) * 0.045, z), (L, 0.012, 0.12), steel)
 
 
 def build_lights(stage):
@@ -310,6 +312,9 @@ def build_wall(stage):
             procedural_box(stage, path, (d, w, h), cards[idx % len(cards)], tape)
         add_label(top_prim.GetPrim(), "carton")
         b["prim"], b["model"] = path, used
+    if boxes:                                                   # sanity check: the first box's world bounds
+        r = bounds(stage.GetPrimAtPath(boxes[0]["prim"]))
+        print(f"[trailer] {boxes[0]['prim']} ({boxes[0]['model']}) world bounds {list(r.GetMin())} .. {list(r.GetMax())}")
     fronts = [b["front_face_x_m"] for b in boxes]
     print(f"[trailer] {len(boxes)} boxes in {args.rows} rows; front faces spread over "
           f"{100 * (max(fronts) - min(fronts)):.1f} cm; yaw within +/-{args.yaw} deg")
@@ -350,12 +355,29 @@ def main():
     for a in anns.values():
         a.attach([rp])
 
-    for _ in range(30):                                         # load assets / compile shaders
+    # Let every referenced SimReady model (geometry, MDL materials, textures) stream into the renderer before the
+    # final frame: wait for the stage to finish loading, then keep rendering until the instance annotator sees
+    # the boxes. On a fresh machine the first material compile takes minutes.
+    import time
+    t0 = time.time()
+    while time.time() - t0 < 600:
         simulation_app.update()
-    for _ in range(6):
-        rep.orchestrator.step(rt_subframes=args.subframes)
-        if np.asarray(anns["rgb"].get_data()).ndim == 3:
+        _msg, loaded, total = ctx.get_stage_loading_status()
+        if total == 0 or loaded >= total:
             break
+    for _ in range(60):
+        simulation_app.update()
+    seen = 0
+    for k in range(40):                                         # up to ~40 render passes
+        rep.orchestrator.step(rt_subframes=4)
+        ins = anns["instance"].get_data()
+        labels = (ins or {}).get("info", {}).get("idToLabels", {}) if isinstance(ins, dict) else {}
+        seen = sum("/World/Boxes/" in str(v) for v in labels.values())
+        if seen >= max(1, len(boxes) // 3):
+            break
+        time.sleep(2)
+    print(f"[trailer] boxes visible to the camera: {seen} (after {k + 1} passes, {time.time() - t0:.0f} s)")
+    rep.orchestrator.step(rt_subframes=args.subframes)          # final, well-converged frame
 
     from PIL import Image
     rgb = np.asarray(anns["rgb"].get_data())[..., :3]
