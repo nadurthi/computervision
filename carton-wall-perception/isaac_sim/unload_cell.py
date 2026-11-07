@@ -584,12 +584,26 @@ def make_sensors(stage_):
     return anns
 
 
-def record(anns, k):
+def accumulate_lidar(ann, step, n_frames=12):
+    """A rotating lidar returns one azimuth slice per rendered frame (Example_Rotary: 10 Hz, so 6 frames per turn
+    at 60 fps). Step the sim n_frames times and stack the slices into one full scan. Points are in world frame."""
+    chunks = []
+    for _ in range(n_frames):
+        step()
+        d = ann.get_data()
+        arr = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, dtype=np.float32)
+        if arr.size:
+            chunks.append(arr.reshape(-1, 3))
+    return {"data": np.concatenate(chunks) if chunks else np.zeros((0, 3), np.float32)}
+
+
+def record(anns, k, step=None):
     if anns is None:
         return
     import omni.replicator.core as rep
     from PIL import Image
-    lidar = anns["lidar"].get_data() if "lidar" in anns else None   # read while the timeline plays
+    lidar = (accumulate_lidar(anns["lidar"], step) if ("lidar" in anns and step is not None)
+             else None)                              # stepped while the timeline plays
     for _ in range(5):                                        # camera annotators fill on a replicator step
         rep.orchestrator.step(rt_subframes=4, pause_timeline=False)
         if np.asarray(anns["rgb"].get_data()).ndim == 3:
@@ -664,7 +678,7 @@ def main():
         b = next_box(boxes)
         if b is None or (args.picks and picks >= args.picks):
             break
-        record(anns, picks)
+        record(anns, picks, step=lambda: wait(1))
         pos, _ = b["rigid"].get_world_pose()
         top = pos + np.array([0.0, 0.0, b["size"][2]])
         path = [top + [0, 0, 0.20], top + [0, 0, 0.005]]

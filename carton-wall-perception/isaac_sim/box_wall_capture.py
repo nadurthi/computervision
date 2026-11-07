@@ -418,11 +418,13 @@ def make_lidar():
     )
     rp = rep.create.render_product(sensor.GetPath(), [1, 1], name="LidarRP")
     # Per-frame point cloud. In Isaac Sim 5.1 the accumulating IsaacCreateRTXLidarScanBuffer returned 0 points
-    # in a plain standalone loop, while this one returned ~29k (see lidar_test.py). Points are in the sensor frame.
+    # in a plain standalone loop, while this one returned ~29k (see lidar_test.py). It gives one azimuth
+    # slice per frame, so accumulate_lidar() stacks several frames into a full scan (world frame).
     ann = rep.AnnotatorRegistry.get_annotator("IsaacExtractRTXSensorPointCloudNoAccumulator")
     ann.attach([rp.path])
     return ann, {"prim": str(sensor.GetPath()), "config": args.lidar_config, "position_m": list(pos),
-                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "points_frame": "sensor"}
+                 "orientation_wxyz": [1.0, 0.0, 0.0, 0.0], "points_frame": "world",
+                 "scan": "12 per-frame slices stacked (one full rotation or more)"}
 
 
 def write_ply(path, pts):
@@ -430,6 +432,19 @@ def write_ply(path, pts):
         f.write(f"ply\nformat ascii 1.0\nelement vertex {len(pts)}\n"
                 "property float x\nproperty float y\nproperty float z\nend_header\n")
         np.savetxt(f, pts, fmt="%.4f")
+
+
+def accumulate_lidar(ann, step, n_frames=12):
+    """A rotating lidar returns one azimuth slice per rendered frame (Example_Rotary: 10 Hz, so 6 frames per turn
+    at 60 fps). Step the sim n_frames times and stack the slices into one full scan. Points are in world frame."""
+    chunks = []
+    for _ in range(n_frames):
+        step()
+        d = ann.get_data()
+        arr = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, dtype=np.float32)
+        if arr.size:
+            chunks.append(arr.reshape(-1, 3))
+    return {"data": np.concatenate(chunks) if chunks else np.zeros((0, 3), np.float32)}
 
 
 def save_frame(i, anns, lidar_data):
@@ -505,7 +520,8 @@ def main():
         for _ in range(4):
             world.step(render=True)
         # lidar first, while the timeline is still playing (a replicator step pauses it by default)
-        lidar_data = lidar_ann.get_data() if lidar_ann is not None else None
+        lidar_data = (accumulate_lidar(lidar_ann, lambda: world.step(render=True))
+                      if lidar_ann is not None else None)
         for _ in range(5):                                    # camera annotators fill on a replicator step
             rep.orchestrator.step(rt_subframes=4, pause_timeline=False)
             if np.asarray(anns["rgb"].get_data()).ndim == 3:
