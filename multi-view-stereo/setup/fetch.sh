@@ -47,7 +47,7 @@ fetch_gdrive() {
   _cache_get "$name" "$dest" && return 0
   echo "[fetch] $name <- Google Drive $id"
   for attempt in 1 2 3; do
-    if _gdown -q --fuzzy "https://drive.google.com/uc?id=$id" -O "$dest" && [ -s "$dest" ]; then
+    if _gdown -q "$id" -O "$dest" && [ -s "$dest" ]; then
       _cache_put "$name" "$dest"
       return 0
     fi
