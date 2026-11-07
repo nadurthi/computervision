@@ -4,7 +4,7 @@
 # interrupted run resumes where it stopped. Results are synced to S3 after every method if S3_OUT is set.
 #
 #   bash scripts/run_all.sh quick /opt/mvs/data /opt/mvs/models ./results [s3://bucket/runs/<id>]
-#   ONLY=stereo|mvs|pointcloud  METHODS="patchmatchnet acmmp"  to run a subset
+#   ONLY=stereo|mvs|pointcloud|latency  METHODS="patchmatchnet acmmp"  to run a subset
 set -uo pipefail
 PROFILE=${1:-quick}; DATA=${2:-/opt/mvs/data}; MODELS=${3:-/opt/mvs/models}; OUT=${4:-./results}; S3_OUT=${5:-}
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -26,8 +26,9 @@ methods_of() { "$MODELS/envs/main/bin/python" -c "import yaml,sys; c=yaml.safe_l
 
 sync() { [ -n "$S3_OUT" ] && aws s3 sync "$OUT" "$S3_OUT" --only-show-errors --exclude "*/depth/*" --exclude "*/ply/*" --exclude "*/vis/*" || true; }
 
-run() {             # run <kind> <method> <script>
+run() {             # run <kind> <method> <script> [extra args]
   local kind=$1 m=$2 script=$3 py
+  shift 3
   py=$(env_for "$m")
   if [ -n "${METHODS:-}" ] && ! [[ " $METHODS " == *" $m "* ]]; then return; fi
   if [ ! -x "$py" ]; then echo "[run_all] skip $m: env missing ($py)"; return; fi
@@ -35,7 +36,7 @@ run() {             # run <kind> <method> <script>
   local extra=()
   [ "$m" = colmap ] && extra=(env PATH="$MODELS/envs/mvsa/bin:$PATH")
   timeout --kill-after=2m "$METHOD_TIMEOUT" "${extra[@]}" "$py" "$HERE/scripts/$script" --config "$CFG" --method "$m" \
-    --data-root "$DATA" --models-root "$MODELS" --out "$OUT" >> "$OUT/logs/${kind}_$m.log" 2>&1 \
+    --data-root "$DATA" --models-root "$MODELS" --out "$OUT" "$@" >> "$OUT/logs/${kind}_$m.log" 2>&1 \
     || echo "[run_all] $m exited with $? (see $OUT/logs/${kind}_$m.log)"
   sync
 }
@@ -48,6 +49,12 @@ if [ "$ONLY" = all ] || [ "$ONLY" = stereo ]; then
 fi
 if { [ "$ONLY" = all ] || [ "$ONLY" = pointcloud ]; } && [ "$("$MODELS/envs/main/bin/python" -c "import yaml; print(bool(yaml.safe_load(open('$CFG'))['mvs'].get('pointcloud')))")" = True ]; then
   for m in $(methods_of mvs pointcloud_methods); do run pointcloud "$m" run_dtu_pointcloud.py; done
+fi
+# latency: 1 warm-up + 5 timed calls per input, same resolution as the accuracy runs (after them, so it never
+# delays accuracy results; skipped for methods already measured)
+if [ "$ONLY" = all ] || [ "$ONLY" = latency ]; then
+  for m in $(methods_of mvs); do run latency_mvs "$m" run_latency.py --kind mvs; done
+  for m in $(methods_of stereo); do run latency_stereo "$m" run_latency.py --kind stereo; done
 fi
 "$MODELS/envs/main/bin/python" "$HERE/scripts/make_report.py" --results "$OUT" > "$OUT/logs/report.log" 2>&1
 "$MODELS/envs/main/bin/python" "$HERE/scripts/make_figures.py" --results "$OUT" --data-root "$DATA" --config "$CFG" \

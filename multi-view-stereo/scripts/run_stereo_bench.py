@@ -19,6 +19,7 @@ import yaml
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from mvsbench.data.stereo import DATASETS            # noqa: E402
 from mvsbench.metrics import disparity_metrics       # noqa: E402
+from mvsbench.timing import Timed, gpu_name          # noqa: E402
 
 
 def build(method, models_root, device, max_disp):
@@ -48,6 +49,7 @@ def main():
         for ln in open(jl):
             done.add(json.loads(ln)["sample"])
     f = open(jl, "a")
+    gpu = gpu_name()
     for ds, opts in cfg["datasets"].items():
         samples = list(DATASETS[ds](a.data_root, limit=(opts or {}).get("limit")))
         if not samples:
@@ -58,26 +60,20 @@ def main():
         for i, s in enumerate(samples):
             if s["name"] in done:
                 continue
-            if a.device.startswith("cuda"):
-                import torch
-                torch.cuda.synchronize()
-            t0 = time.time()
             try:
-                disp = model(s["left"], s["right"], s["max_disp"])
+                with Timed(a.device) as tm:
+                    disp = model(s["left"], s["right"], s["max_disp"])
             except Exception as e:                     # an OOM on one huge pair must not kill the whole run
                 print(f"[{a.method}] {s['name']} failed: {e}", flush=True)
                 if a.device.startswith("cuda"):
                     import torch
                     torch.cuda.empty_cache()
                 continue
-            if a.device.startswith("cuda"):
-                import torch
-                torch.cuda.synchronize()
-            dt = time.time() - t0
+            dt = tm.seconds
             gt = s["gt"]
             regions = {"all": gt > 0, "noc": (gt > 0) & s["nocc"], "occ": (gt > 0) & ~s["nocc"]}
             for reg, m in regions.items():
-                row = dict(sample=s["name"], dataset=ds, method=a.method, region=reg, time_s=dt,
+                row = dict(sample=s["name"], dataset=ds, method=a.method, region=reg, time_s=dt, peak_mb=tm.peak_mb, gpu=gpu,
                            hw=list(gt.shape), **disparity_metrics(disp, gt, m))
                 f.write(json.dumps(row) + "\n")
             f.flush()

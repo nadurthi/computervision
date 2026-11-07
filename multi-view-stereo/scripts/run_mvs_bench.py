@@ -30,6 +30,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from mvsbench import geometry as G                     # noqa: E402
 from mvsbench.data.mvs import DATASETS                 # noqa: E402
 from mvsbench.metrics import depth_metrics             # noqa: E402
+from mvsbench.timing import Timed, gpu_name             # noqa: E402
 from mvsbench.mvs import CLASSICAL, SCENE_LEVEL, build # noqa: E402
 
 UNITS_TO_M = {"dtu": 1e-3, "eth3d": 1.0, "blendedmvs": 1.0}
@@ -99,6 +100,8 @@ def main():
     ap.add_argument("--datasets", nargs="*", default=None)
     a = ap.parse_args()
     ROOT = a.data_root
+    global GPU
+    GPU = gpu_name()
     cfg = yaml.safe_load(open(a.config))["mvs"]
     out_dir = os.path.join(a.out, "mvs")
     os.makedirs(out_dir, exist_ok=True)
@@ -140,31 +143,25 @@ def main():
                     ids = [ref] + srcs
                     imgs, Ks, Es = scene.load(ids, run_wh)
                     rng = scene.depth_range(ref)
-                    if a.device.startswith("cuda"):
-                        import torch
-                        torch.cuda.synchronize()
-                    t0 = time.time()
                     try:
-                        if a.method in SCENE_LEVEL:
-                            pred = method.run_scene(imgs, Ks, Es, [scene.depth_range(i) for i in ids],
-                                                    [(0, list(range(1, n)))])[0]
-                        else:
-                            pred = method(imgs, Ks, Es, rng)
+                        with Timed(a.device, external=a.method in SCENE_LEVEL) as tm:
+                            if a.method in SCENE_LEVEL:
+                                pred = method.run_scene(imgs, Ks, Es, [scene.depth_range(i) for i in ids],
+                                                        [(0, list(range(1, n)))])[0]
+                            else:
+                                pred = method(imgs, Ks, Es, rng)
                     except Exception as e:
                         print(f"[{a.method}] {ds}/{scene.name} ref {ref} N={n} failed: {e}", flush=True)
                         if a.device.startswith("cuda"):
                             import torch
                             torch.cuda.empty_cache()
                         continue
-                    if a.device.startswith("cuda"):
-                        import torch
-                        torch.cuda.synchronize()
-                    dt = time.time() - t0
+                    dt = tm.seconds
                     gt, regs = regions(gtc, ref, srcs)
                     pred_e = G.resize_depth(pred, scene.eval_wh)
                     for reg, m in regs.items():
                         row = dict(dataset=ds, scene=scene.name, ref=int(ref), nviews=n, method=a.method,
-                                   region=reg, time_s=dt, run_wh=list(run_wh), units=scene.units,
+                                   region=reg, time_s=dt, peak_mb=tm.peak_mb, gpu=GPU, run_wh=list(run_wh), units=scene.units,
                                    **depth_metrics(pred_e, gt, m, abs_thresholds=scene.abs_thresholds))
                         fout.write(json.dumps(row) + "\n")
                     fout.flush()
