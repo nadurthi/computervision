@@ -2,10 +2,12 @@
 
     pip install boto3
     python launch_isaac_ec2.py launch             # create role/bucket/SG if needed, start the instance
-    python launch_isaac_ec2.py rerun              # later session: start it again, pull latest code, run
+    python launch_isaac_ec2.py rerun              # later session: a fresh instance with the latest code
     python launch_isaac_ec2.py status             # instance state, run progress, last log lines
     python launch_isaac_ec2.py fetch ./results    # download the latest run from S3
-    python launch_isaac_ec2.py stop               # stop the instance (disk kept, compute billing stops)
+    python launch_isaac_ec2.py stop               # end it now (same as terminate: nothing is kept on EC2)
+
+Storage: S3 is the only persistent storage. Every shutdown terminates the instance and deletes its disk.
     python launch_isaac_ec2.py terminate          # delete the instance and its disk
     python launch_isaac_ec2.py cleanup            # terminate + remove the role, profile, security group (keeps the bucket)
 
@@ -139,8 +141,8 @@ fi
 def launch(a):
     inst = find_instance()
     if inst:
-        if inst["State"]["Name"] == "stopped":
-            print("instance", inst["InstanceId"], "is stopped: use `rerun` to start it and run again")
+        if inst["State"]["Name"] == "stopped":       # left over from an older version of this script
+            print("instance", inst["InstanceId"], "is stopped and keeps a disk: run `terminate` first")
         else:
             print("already exists:", inst["InstanceId"], inst["State"]["Name"])
         return
@@ -160,8 +162,8 @@ def launch(a):
     kw = dict(ImageId=ami, InstanceType=INSTANCE_TYPE, MinCount=1, MaxCount=1,
               IamInstanceProfile={"Name": profile}, SecurityGroupIds=[sg],
               UserData=user_data(a),
-              # spot is a one-time request: shutdown terminates (results are already in S3)
-              InstanceInitiatedShutdownBehavior="terminate" if a.spot else "stop",
+              # any shutdown terminates and deletes the disk: results live only in S3
+              InstanceInitiatedShutdownBehavior="terminate",
               BlockDeviceMappings=[{"DeviceName": "/dev/sda1",
                                     "Ebs": {"VolumeSize": 150, "VolumeType": "gp3", "DeleteOnTermination": True}}],
               MetadataOptions={"HttpTokens": "required"},
@@ -207,27 +209,8 @@ def launch(a):
 
 
 def rerun(a):
-    """A later session: start the stopped instance, pull the latest code, run again under the same auto-stop rules."""
-    inst = find_instance(("pending", "running", "stopping", "stopped"))
-    if not inst:
-        sys.exit("no instance; run `launch` first")
-    iid = inst["InstanceId"]
-    if inst["State"]["Name"] != "running":
-        if inst["State"]["Name"] == "stopping":
-            ec2.get_waiter("instance_stopped").wait(InstanceIds=[iid])
-        ec2.start_instances(InstanceIds=[iid])
-        ec2.get_waiter("instance_running").wait(InstanceIds=[iid])
-        print("started", iid)
-    for _ in range(40):                                       # wait for the SSM agent
-        info = ssm.describe_instance_information(Filters=[{"Key": "InstanceIds", "Values": [iid]}])
-        if info["InstanceInformationList"]:
-            break
-        time.sleep(15)
-    script = (f"cd /opt/isaac/computervision && git -c safe.directory=* pull --ff-only; "
-              f"{env_line(a)} bash {CODE_DIR}/bootstrap.sh >> /var/log/isaac-run.log 2>&1")
-    cmd = ssm.send_command(InstanceIds=[iid], DocumentName="AWS-RunShellScript",
-                           Parameters={"commands": [script], "executionTimeout": [str(a.max_hours * 3600)]})
-    print("rerun started:", cmd["Command"]["CommandId"])
+    """A later session. Nothing is kept on EC2 (S3 only), so a rerun is a fresh launch with the latest code."""
+    launch(a)
 
 
 def status(a):
@@ -267,12 +250,8 @@ def fetch(a):
 
 
 def stop(a):
-    inst = find_instance(("pending", "running"))
-    if inst:
-        ec2.stop_instances(InstanceIds=[inst["InstanceId"]])
-        print("stopping", inst["InstanceId"])
-    else:
-        print("nothing running")
+    """No stopped instances (they keep an EBS disk): stop means terminate."""
+    terminate(a)
 
 
 def terminate(a):
@@ -305,10 +284,7 @@ def cleanup(a):
     print(f"kept bucket s3://{BUCKET} (delete it in the console when you no longer need the results)")
 
 
-if __name__ == "__main__":
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    p = sub.add_parser("launch")
+def add_launch_args(p):
     p.add_argument("--spot", action="store_true", help="spot instance (~20%% cheaper, can be interrupted)")
     p.add_argument("--no-auto-stop", dest="auto_stop", action="store_false",
                    help="do not stop right after the run (the idle/uptime watchdog still applies)")
@@ -318,14 +294,15 @@ if __name__ == "__main__":
     p.add_argument("--idle-minutes", type=int, default=20, help="stop after this many idle minutes (default 20)")
     p.add_argument("--max-hours", type=int, default=4, help="hard limit on uptime per boot (default 4)")
     p.add_argument("--step-timeout", default="90m", help="time limit for each Isaac script (default 90m)")
-    r = sub.add_parser("rerun")
-    for q in (p, r):
-        if q is r:
-            q.add_argument("--no-auto-stop", dest="auto_stop", action="store_false")
-            q.add_argument("--image", default="nvcr.io/nvidia/isaac-sim:5.1.0")
-            q.add_argument("--idle-minutes", type=int, default=20)
-            q.add_argument("--max-hours", type=int, default=4)
-            q.add_argument("--step-timeout", default="90m")
+
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    p = sub.add_parser("launch")
+    r = sub.add_parser("rerun")       # same options: a rerun is a fresh launch
+    for p in (p, r):
+        add_launch_args(p)
     sub.add_parser("status"); sub.add_parser("stop"); sub.add_parser("terminate")
     sub.add_parser("cleanup")
     f = sub.add_parser("fetch"); f.add_argument("dest", nargs="?", default="./isaac_results")

@@ -8,9 +8,9 @@ scripts, so you can launch with one and rerun with the other.
 
 | File | Runs where | What it does |
 |---|---|---|
-| `launch_isaac_ec2.sh` | your machine or AWS CloudShell (AWS CLI v2) | AWS CLI launcher: `launch`, `rerun`, `status`, `fetch`, `stop`, `terminate`, `cleanup` |
+| `launch_isaac_ec2.sh` | your machine or AWS CloudShell (AWS CLI v2) | AWS CLI launcher: `launch`, `rerun`, `status`, `fetch`, `terminate`, `cleanup` |
 | `launch_isaac_ec2.py` | same (`pip install boto3`) | the same commands in Python |
-| `bootstrap.sh` | on the instance | installs the auto-stop watchdog service, waits for the GPU driver, runs `run_on_ec2.sh`, stops the instance |
+| `bootstrap.sh` | on the instance | installs the auto-stop watchdog service, waits for the GPU driver, runs `run_on_ec2.sh`, shuts the instance down (which terminates it) |
 | `isaac-watchdog.sh` | on the instance (systemd service) | stops the instance when idle or after the uptime limit, on every boot |
 | `run_on_ec2.sh` | on the instance | thin wrapper: pulls the latest code, runs `../run_all.sh` (the same script you run locally: assets, Docker image, smoke/lidar tests, both Isaac scripts, `report.html`), syncs the run folder to S3 |
 
@@ -19,8 +19,8 @@ scripts, so you can launch with one and rerun with the other.
 ./launch_isaac_ec2.sh status              # state, runs in S3, watchdog state + last log lines (SSM, no SSH)
 ./launch_isaac_ec2.sh fetch ./results     # latest run from s3://isaac-boxwall-<account>-us-east-1/runs/
 
-./launch_isaac_ec2.sh rerun               # any later session: starts the stopped instance, pulls the latest
-                                          # code from GitHub, runs again, stops again
+./launch_isaac_ec2.sh rerun               # any later session: a fresh instance with the latest code from GitHub
+                                          # (same as launch; nothing is kept on EC2 between sessions)
 
 ./launch_isaac_ec2.sh cleanup             # terminate + delete role/profile/security group (bucket kept)
 ```
@@ -31,9 +31,16 @@ security group with **no inbound rules** (a shell is `aws ssm start-session --ta
 **g6.2xlarge** (NVIDIA L4 24 GB, 8 vCPU, 32 GB RAM) from the AWS Deep Learning Base OSS NVIDIA Driver GPU AMI
 (Ubuntu 22.04) with a 150 GB gp3 disk.
 
+## Storage: S3 only
+
+S3 is the only persistent storage. Every shutdown, whatever the cause, **terminates** the instance and deletes
+its disk, so no EBS volume or stopped instance is ever left behind. Results, logs and `report.html` are in
+`s3://isaac-boxwall-<account>-us-east-1/runs/<run>/`. The price is that each session pulls the Isaac Sim image
+and compiles shaders again (about 10 extra minutes).
+
 ## Automatic stop (always on, every session)
 
-The instance stops itself:
+The instance shuts itself down, and with it is terminated:
 
 1. **when the run finishes**, whether it succeeded or failed (first launch and every `rerun`);
 2. **when idle for 20 minutes**: no run in progress, GPU below 5 %, CPU load below 1;
@@ -41,7 +48,7 @@ The instance stops itself:
 
 Each Isaac script also has a **90-minute** limit, after which its container is killed. (2) and (3) are
 `isaac-watchdog.sh`, installed by `bootstrap.sh` as a systemd service, so they apply on every boot, including
-restarts and reruns. On the first boot the user data also schedules a hard shutdown after 4 hours before doing
+every boot. On boot the user data also schedules a hard shutdown after 4 hours before doing
 anything else, so even a failed `git clone` cannot leave the GPU running.
 
 Settings, as environment variables for the `.sh` launcher or flags for the `.py` one:
@@ -62,5 +69,5 @@ which the 5.1 renderer segfaults at startup, so both launchers pin the AMI by na
 **Before the first launch:** the EC2 quota *Running On-Demand G and VT instances* in us-east-1 must be at least
 8 vCPUs (new accounts have 0; request it in the Service Quotas console).
 
-**Cost** (us-east-1, Nov 2026): g6.2xlarge $0.9776/h on-demand (spot about $0.76-0.89/h); 150 GB gp3 about
-$12/month while the disk exists (a stopped instance keeps its disk; `terminate` or `cleanup` removes it).
+**Cost** (us-east-1, Nov 2026): g6.2xlarge $0.9776/h on-demand (spot about $0.76-0.89/h). The 150 GB gp3 disk
+exists only while the instance runs. S3 storage for the runs is a few cents per month.

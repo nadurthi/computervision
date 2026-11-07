@@ -3,10 +3,13 @@
 #
 #   ./launch_isaac_ec2.sh launch              # create role/bucket/security group if needed, start the instance
 #   ./launch_isaac_ec2.sh status              # instance state, runs in S3, last log lines (via SSM)
-#   ./launch_isaac_ec2.sh rerun               # later session: start the stopped instance, pull the latest code, run again
+#   ./launch_isaac_ec2.sh rerun               # later session: a fresh instance with the latest code (same as launch)
 #   ./launch_isaac_ec2.sh fetch [dir]         # download the latest run from S3
-#   ./launch_isaac_ec2.sh stop                # stop now (disk kept)
+#   ./launch_isaac_ec2.sh stop                # end it now (same as terminate: nothing is kept on EC2)
 #   ./launch_isaac_ec2.sh terminate           # delete the instance and its disk
+#
+# Storage: S3 is the only persistent storage. Every shutdown (end of run, idle, max uptime, manual stop)
+# terminates the instance and deletes its disk, so no EBS volume or stopped instance is ever left behind.
 #   ./launch_isaac_ec2.sh cleanup             # terminate + delete role, instance profile, security group (keeps bucket)
 #
 # Settings (environment variables):
@@ -143,11 +146,10 @@ cmd_launch() {
     [ "$ami" = "None" ] && { log "AMI '$AMI_NAME' not found in $REGION"; exit 1; }
   fi
   ud=$(user_data_file)
-  # Spot: one-time request, so a shutdown terminates (results are already in S3); `rerun` then means `launch` again.
-  local shutdown_behavior=stop
+  # Any shutdown terminates the instance and deletes its disk: results live only in S3.
+  local shutdown_behavior=terminate
   if [ "$SPOT" = "1" ]; then
     market=(--instance-market-options 'MarketType=spot,SpotOptions={SpotInstanceType=one-time,InstanceInterruptionBehavior=terminate}')
-    shutdown_behavior=terminate
   fi
   # GPU capacity varies by availability zone: try each default subnet that offers the instance type.
   local vpc subnets
@@ -185,21 +187,8 @@ cmd_launch() {
   log "progress: $0 status    shell: aws ssm start-session --target $id"
 }
 
-cmd_rerun() {     # a later session: same instance, latest code from GitHub, same watchdog rules
-  local id; id=$(instance_id)
-  [ -z "$id" ] && { log "no instance; run: $0 launch"; exit 1; }
-  if [ "$(aws ec2 describe-instances --instance-ids "$id" --query 'Reservations[0].Instances[0].State.Name' --output text)" != "running" ]; then
-    aws ec2 start-instances --instance-ids "$id" >/dev/null
-    aws ec2 wait instance-running --instance-ids "$id"
-    log "started $id"
-  fi
-  wait_ssm "$id"
-  local script="cd /opt/isaac/computervision && git -c safe.directory=* pull --ff-only; $(env_line) bash $CODE_DIR/bootstrap.sh >> /var/log/isaac-run.log 2>&1"
-  local cid
-  cid=$(aws ssm send-command --instance-ids "$id" --document-name AWS-RunShellScript \
-        --parameters "{\"commands\":[\"$script\"],\"executionTimeout\":[\"$((MAX_HOURS * 3600))\"]}" \
-        --query Command.CommandId --output text)
-  log "rerun started on $id (command $cid). The watchdog service is active on every boot."
+cmd_rerun() {     # a later session: nothing is kept on EC2, so a rerun is a fresh launch with the latest code
+  cmd_launch
 }
 
 cmd_status() {
@@ -230,9 +219,8 @@ cmd_fetch() {
   log "downloaded s3://$BUCKET/runs/$last to $dest/$last"
 }
 
-cmd_stop() {
-  local id; id=$(instance_id pending,running)
-  [ -n "$id" ] && aws ec2 stop-instances --instance-ids "$id" >/dev/null && log "stopping $id" || log "nothing running"
+cmd_stop() {      # no stopped instances (they keep an EBS disk): stop means terminate
+  cmd_terminate
 }
 
 cmd_terminate() {
