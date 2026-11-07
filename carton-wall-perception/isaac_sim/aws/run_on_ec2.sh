@@ -60,6 +60,7 @@ isaac() {   # isaac <log-name> <python args...>
 # 0) smoke tests: is rendering itself OK in this container / driver / GPU, with and without RTX stable ids?
 STEP_TIMEOUT=10m isaac smoke /work/smoke_test.py --out /out/smoke
 STEP_TIMEOUT=10m isaac smoke_ids /work/smoke_test.py --out /out/smoke_ids --stable-ids
+STEP_TIMEOUT=10m isaac lidar_test /work/lidar_test.py --out /out/lidar_test
 
 if [ "${RUN_SCRIPTS:-1}" = "1" ]; then
   # 1) box wall in the warehouse: RGB, depth, masks, 2D boxes, lidar

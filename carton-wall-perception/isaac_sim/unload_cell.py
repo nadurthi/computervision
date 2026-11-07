@@ -408,7 +408,13 @@ class Robot:
         prim = UsdGeom.Xform.Define(stage, "/World/UR10")
         prim.GetPrim().GetReferences().AddReference(url)
         self._select_suction_variant(prim.GetPrim())
-        UsdGeom.Xformable(prim).AddTranslateOp().Set(Gf.Vec3d(ROBOT_BASE[0], ROBOT_BASE[1], PEDESTAL_H))
+        # the UR10 asset already authors translate/orient/scale on its root: set the existing op, don't add one
+        pos = Gf.Vec3d(float(ROBOT_BASE[0]), float(ROBOT_BASE[1]), PEDESTAL_H)
+        t_attr = prim.GetPrim().GetAttribute("xformOp:translate")
+        if t_attr and t_attr.IsValid():
+            t_attr.Set(pos)
+        else:
+            UsdGeom.Xformable(prim).AddTranslateOp().Set(pos)
         self.arm = world.scene.add(SingleArticulation("/World/UR10", name="ur10"))
         self.gripper_path = self._find_surface_gripper(prim.GetPrim())
         self.tool_len = 0.12
