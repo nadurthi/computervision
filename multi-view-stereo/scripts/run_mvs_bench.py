@@ -112,6 +112,7 @@ def main():
             r = json.loads(ln)
             done.add((r["dataset"], r["scene"], r["ref"], r["nviews"]))
     fout = open(jl, "a")
+    ovr = (cfg.get("method_overrides") or {}).get(a.method, {})   # e.g. a slow method on fewer cases
     is_stereo = a.method.startswith("stereo_")
     is_classical = a.method in CLASSICAL
     models = {}
@@ -131,8 +132,10 @@ def main():
         for scene in scenes:
             gtc = GTCache(scene)
             refs = pick_refs(scene, opts)
+            if "max_refs" in ovr:
+                refs = refs[:ovr["max_refs"]]
             for k_ref, ref in enumerate(refs):
-                for n in cfg["nviews"]:
+                for n in ovr.get("nviews", cfg["nviews"]):
                     if is_stereo and n != 2:
                         continue
                     if (ds, scene.name, ref, n) in done:

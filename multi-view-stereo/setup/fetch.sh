@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Download helpers with an S3 mirror. Source this file. If CACHE_S3 is set (s3://bucket/prefix), every artefact is
-# first looked up there and uploaded there after a successful download, so later sessions never depend on Google
-# Drive quotas or slow academic servers again.
+# Download helpers with an optional local cache. Source this file.
+#
+# If CACHE_DIR is set (any directory), every downloaded artefact is kept there under a stable name, and later
+# downloads of the same artefact are served from it (hard link when possible, otherwise copy). Point CACHE_DIR at a
+# disk that survives re-installs, or at a synced folder; the AWS runner syncs it with an S3 bucket.
 #
 #   fetch_url <cache-name> <url> <dest-file>
 #   fetch_gdrive <cache-name> <file-id> <dest-file>
@@ -13,15 +15,19 @@ _gdown() {
   gdown "$@"
 }
 
-_cache_get() {   # _cache_get <name> <dest> -> 0 if restored from S3
-  [ -n "${CACHE_S3:-}" ] || return 1
-  aws s3 ls "$CACHE_S3/$1" >/dev/null 2>&1 || return 1
-  aws s3 cp --only-show-errors "$CACHE_S3/$1" "$2" && echo "[fetch] $1 <- $CACHE_S3"
+_cache_get() {   # _cache_get <name> <dest> -> 0 if restored from CACHE_DIR
+  [ -n "${CACHE_DIR:-}" ] && [ -s "$CACHE_DIR/$1" ] || return 1
+  mkdir -p "$(dirname "$2")"
+  ln -f "$CACHE_DIR/$1" "$2" 2>/dev/null || cp "$CACHE_DIR/$1" "$2"
+  echo "[fetch] $1 <- cache"
 }
 
 _cache_put() {   # _cache_put <name> <file>
-  [ -n "${CACHE_S3:-}" ] || return 0
-  aws s3 cp --only-show-errors "$2" "$CACHE_S3/$1" && echo "[fetch] $1 -> $CACHE_S3" || true
+  [ -n "${CACHE_DIR:-}" ] || return 0
+  mkdir -p "$CACHE_DIR"
+  [ -s "$CACHE_DIR/$1" ] && return 0
+  ln -f "$2" "$CACHE_DIR/$1" 2>/dev/null || cp "$2" "$CACHE_DIR/$1"
+  echo "[fetch] $1 -> cache"
 }
 
 fetch_url() {
@@ -54,7 +60,7 @@ fetch_gdrive() {
     sleep $((attempt * 30))
   done
   echo "[fetch] FAILED $name: Google Drive refused the download (quota). Download it in a browser from" >&2
-  echo "        https://drive.google.com/file/d/$id and upload it to ${CACHE_S3:-<CACHE_S3>}/$name" >&2
+  echo "        https://drive.google.com/file/d/$id and save it as ${CACHE_DIR:-<CACHE_DIR>}/$name" >&2
   return 1
 }
 
@@ -76,6 +82,6 @@ fetch_gdrive_folder() {
   done
   rm -f "$tgz"
   echo "[fetch] FAILED $name: download the folder $url in a browser, tar it (tar -czf $name.tgz -C <folder> .)" >&2
-  echo "        and upload it to ${CACHE_S3:-<CACHE_S3>}/$name.tgz" >&2
+  echo "        and save it as ${CACHE_DIR:-<CACHE_DIR>}/$name.tgz" >&2
   return 1
 }

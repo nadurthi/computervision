@@ -15,7 +15,7 @@ PROFILE=full ./launch_mvs_ec2.sh rerun     # later: same disk (envs + data kept)
 | `launch_mvs_ec2.sh` | your machine / CloudShell (AWS CLI v2) | creates the role, bucket, security group; launches, reruns, reports, fetches, cleans up |
 | `bootstrap.sh` | instance | installs the auto-stop watchdog, waits for the GPU, runs `run_on_ec2.sh`, stops the instance |
 | `mvs-watchdog.sh` | instance (systemd) | stops the instance when idle or after `MAX_HOURS`, on every boot |
-| `run_on_ec2.sh` | instance | `setup/install_models.sh` → `setup/download_datasets.sh` → `scripts/run_all.sh` → S3 |
+| `run_on_ec2.sh` | instance | syncs `cache/` and `results/` with S3 around `scripts/run_benchmark.sh` (the same script you run locally) |
 
 What `launch` creates (tagged `Project=mvs-bench`): IAM role + instance profile `mvs-bench` (SSM + read/write on the
 bucket only), private bucket `mvs-bench-<account>-us-east-1` (`cache/` = mirrored datasets and weights,

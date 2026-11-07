@@ -22,8 +22,11 @@ mvs:
       work_wh: [1152, 768]
       learned_wh: [1152, 768]
       eval_wh: [1152, 768]
-  methods: [planesweep_mean, planesweep_bestk, planesweep_bestk_sgm, patchmatch, acmmp, colmap,
+  methods: [planesweep_mean, planesweep_bestk, planesweep_bestk_sgm, patchmatch, acmmp,
             patchmatchnet, itermvs_dtu, itermvs_blendedmvs, mvsanywhere, vis_mvsnet, robust_mvd,
-            stereo_sgbm, stereo_sgbm_fill, stereo_raft_stereo_middlebury, stereo_foundation_stereo]
+            stereo_sgbm, stereo_sgbm_fill, stereo_raft_stereo_middlebury, stereo_foundation_stereo,
+            colmap]
+  method_overrides:               # COLMAP's geometric pass re-estimates every source view: ~1 min per set at N=5
+    colmap: {nviews: [2, 5], max_refs: 3}
   save_depth: qualitative          # qualitative = a few reference views per scene; all = every prediction
   pointcloud: false

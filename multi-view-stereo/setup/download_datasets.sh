@@ -4,8 +4,8 @@
 #   bash setup/download_datasets.sh /opt/mvs/data quick      # what configs/quick.yaml needs  (~45 GB download incl. 28 GB DTU depth maps)
 #   bash setup/download_datasets.sh /opt/mvs/data full       # everything in configs/full.yaml (~160 GB)
 #
-# Idempotent. With CACHE_S3=s3://bucket/cache set, each archive is mirrored to S3 after its first download.
-# Needs: wget/curl, unzip, 7z, aws cli; gdown is installed on demand. A python with numpy/opencv/tqdm is needed for
+# Idempotent. With CACHE_DIR set, archives are kept there and reused (see setup/fetch.sh).
+# Needs: wget/curl, unzip, 7z; gdown is installed on demand. A python with numpy/opencv/tqdm is needed for
 # the ETH3D undistortion step (PYTHON, default: the main env of install_models.sh).
 set -uo pipefail
 DATA=${1:-/opt/mvs/data}

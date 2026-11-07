@@ -12,11 +12,10 @@
 #                                                                    and COLMAP 3.8 (CUDA) for COLMAP PatchMatch
 # Code + weights:
 #   RAFT-Stereo, IGEV, FoundationStereo, MonSter, PatchmatchNet, IterMVS, ACMMP (built with CUDA), DTUeval-python,
-#   robustmvd, mvsanywhere, Vis-MVSNet. Google-Drive weights are mirrored to S3 ($CACHE_S3) after the first
-#   successful download, because gdown is regularly rate-limited.
+#   robustmvd, mvsanywhere, Vis-MVSNet. With CACHE_DIR set, downloaded weights are kept there and reused after the
+#   first successful download (see setup/fetch.sh), which matters because gdown is regularly rate-limited.
 set -uo pipefail
 MODELS_ROOT=${1:-/opt/mvs/models}
-CACHE_S3=${CACHE_S3:-}                       # e.g. s3://mvs-bench-<account>-us-east-1/cache
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$HERE/fetch.sh"
 mkdir -p "$MODELS_ROOT"/{envs,weights}

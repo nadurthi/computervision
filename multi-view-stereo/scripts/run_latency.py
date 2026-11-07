@@ -86,7 +86,7 @@ def main():
             m = models[key]
             run_wh = tuple(opts["work_wh"] if is_lowres else opts["learned_wh"])
             for ref in refs:
-                for n in cfg["mvs"]["nviews"]:
+                for n in (cfg["mvs"].get("method_overrides") or {}).get(a.method, {}).get("nviews", cfg["mvs"]["nviews"]):
                     if a.method.startswith("stereo_") and n != 2:
                         continue
                     ids = [ref] + sc.sources(ref, n - 1)

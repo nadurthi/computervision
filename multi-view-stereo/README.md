@@ -20,24 +20,35 @@ shows exactly where extra views help.
 
 ## Run it
 
-On AWS (recommended; GPU, everything automated, auto-stop):
+One script runs everything (environments + models, datasets, all benchmarks, `RESULTS.md` + `report.html`). It is
+the same script locally and on AWS; the AWS runner only syncs folders with S3 around it.
+
+**Locally**, on Ubuntu 22.04 with an NVIDIA GPU and the CUDA toolkit:
 
 ```bash
-cd aws && ./launch_mvs_ec2.sh launch          # PROFILE=quick (default) or full
-./launch_mvs_ec2.sh status; ./launch_mvs_ec2.sh fetch ./mvs_results
+bash scripts/run_benchmark.sh quick /opt/mvs        # or: full   (idempotent; re-run to resume)
+xdg-open /opt/mvs/results/quick/report.html
 ```
 
-On any Ubuntu 22.04 machine with an NVIDIA GPU + CUDA toolkit:
+Useful variables: `METHODS="patchmatchnet acmmp"` (subset), `ONLY=mvs|stereo|pointcloud|latency` (one stage),
+`RESET="colmap"` (recompute a method), `SKIP_SETUP=1` (data and models already in place),
+`CACHE_DIR=/big/disk/cache` (keep downloaded archives and weights), `METHOD_TIMEOUT=3h`. To rebuild only the report:
+`python scripts/make_report.py --results R && python scripts/make_figures.py --results R --data-root D --config C && python scripts/make_html_report.py --results R`.
+
+**No GPU, no downloads** (checks the whole pipeline in ~5 minutes on a laptop CPU):
 
 ```bash
-bash setup/install_models.sh /opt/mvs/models            # 3 envs, 11 repos, weights, ACMMP build
-bash setup/download_datasets.sh /opt/mvs/data quick      # or full
-bash scripts/run_all.sh quick /opt/mvs/data /opt/mvs/models ./results
-cat results/RESULTS.md
+pip install -r requirements.txt
+python scripts/smoke_test.py                                   # unit checks: geometry, rectification, methods
+python scripts/make_synthetic_data.py /tmp/mvs_smoke/data
+SKIP_SETUP=1 DEVICE=cpu MODELS_PYTHON=python3 bash scripts/run_benchmark.sh smoke /tmp/mvs_smoke
 ```
 
-CPU sanity check (synthetic ray-traced scene; geometry, rectification in all 4 baseline directions, SGBM, plane sweep,
-PatchMatch, fusion): `pip install -r requirements.txt && python scripts/smoke_test.py`
+**On AWS** (GPU instance, auto-stop, S3 cache of datasets/weights and results): see [`aws/README.md`](aws/README.md).
+
+```bash
+cd aws && ./launch_mvs_ec2.sh launch      # then: status, fetch ./mvs_results, rerun, stop, cleanup
+```
 
 ## Layout
 
@@ -53,12 +64,15 @@ PatchMatch, fusion): `pip install -r requirements.txt && python scripts/smoke_te
 | `mvsbench/mvs/learned.py` | PatchmatchNet, IterMVS, rmvd-wrapped MVSAnywhere / Vis-MVSNet / Robust MVD |
 | `mvsbench/stereo/` | SGBM and the four deep stereo networks |
 | `mvsbench/fusion.py` | geometric-consistency fusion (same for all methods) |
-| `scripts/run_*_bench.py` | one method per process; resumable jsonl output |
+| `scripts/run_benchmark.sh` | **the entry point**: setup → data → `run_all.sh` → report (no cloud code) |
+| `scripts/run_all.sh` | every configured method in its own process and environment, then the report |
+| `scripts/run_*_bench.py`, `run_latency.py` | one method per process; resumable jsonl output; latency = warm-up + timed repeats |
 | `scripts/run_dtu_pointcloud.py` | DTU accuracy / completeness with DTUeval-python |
-| `scripts/make_report.py`, `make_figures.py` | `RESULTS.md`, `summary.json`, figures |
-| `configs/quick.yaml`, `full.yaml` | what runs where |
-| `aws/` | EC2 launcher, bootstrap, watchdog, on-instance job |
-| `setup/` | environments + models, datasets, S3-mirrored downloads |
+| `scripts/make_report.py`, `make_figures.py`, `make_html_report.py` | `RESULTS.md`, `summary.json`, figures, self-contained `report.html` |
+| `scripts/make_synthetic_data.py`, `configs/smoke.yaml` | ray-traced test data + CPU profile for a local end-to-end check |
+| `configs/quick.yaml`, `full.yaml` | datasets, methods, N, resolutions; `method_overrides` for slow methods |
+| `aws/` | EC2 launcher, bootstrap, watchdog; `run_on_ec2.sh` = S3 sync around `run_benchmark.sh` |
+| `setup/` | environments + models, datasets, downloads with an optional local cache |
 
 ## Credits
 

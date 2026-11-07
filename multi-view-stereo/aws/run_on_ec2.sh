@@ -1,52 +1,49 @@
 #!/usr/bin/env bash
-# The benchmark job on the GPU instance. Everything lives on the instance disk under /opt/mvs and survives
-# stop/start, so a rerun skips installed environments, downloaded data and finished methods.
+# The benchmark job on the EC2 instance = scripts/run_benchmark.sh (the same script you run locally) wrapped in S3
+# syncing. Nothing benchmark-specific lives here.
 #
-#   /opt/mvs/computervision   this repository (branch $BRANCH)
-#   /opt/mvs/models           envs/, model repos, weights, ACMMP build
-#   /opt/mvs/data             datasets
-#   /opt/mvs/results/<profile>  jsonl results, RESULTS.md, figures  -> s3://$BUCKET/results/<profile>/
+#   before:  s3://$BUCKET/cache/              -> /opt/mvs/cache/             (archives + weights from earlier runs)
+#            s3://$BUCKET/results/<profile>/  -> /opt/mvs/results/<profile>/ (resume after a terminate)
+#            RESET methods are also deleted from S3, so the sync cannot bring them back
+#   during:  results/<profile>/ -> S3 every 5 minutes
+#   after:   results and cache   -> S3
 #
-# Archives and Google-Drive weights are mirrored to s3://$BUCKET/cache/ after their first download.
+# /opt/mvs (models, data, cache, results) lives on the instance disk and survives stop/start.
 set -uo pipefail
 ROOT=/opt/mvs
 PROFILE=${PROFILE:-quick}
 BUCKET=${BUCKET:?BUCKET not set}
 CODE="$ROOT/computervision/multi-view-stereo"
-export CACHE_S3="s3://$BUCKET/cache"
-export METHOD_TIMEOUT=${METHOD_TIMEOUT:-3h}
-export HOME=${HOME:-/root}
+S3R="s3://$BUCKET/results/$PROFILE"
+S3C="s3://$BUCKET/cache"
+OUT="$ROOT/results/$PROFILE"
+export HOME=${HOME:-/root} CACHE_DIR="$ROOT/cache"
+EXCL=(--exclude "*/depth/*" --exclude "*/disp/*" --exclude "*/ply/*" --exclude "*/vis/*")
 
 touch /run/mvs-busy                     # the idle watchdog treats the instance as busy while this exists
-trap 'rm -f /run/mvs-busy' EXIT
-mkdir -p "$ROOT"/{models,data,results}
-stamp() { echo "===== $(date -u +%Y-%m-%dT%H:%M:%SZ) $*"; }
+mkdir -p "$ROOT" "$CACHE_DIR" "$OUT"
 
-stamp "GPU"; nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv
-stamp "install models + environments"
-bash "$CODE/setup/install_models.sh" "$ROOT/models"
-stamp "download datasets ($PROFILE)"
-MODELS_ROOT="$ROOT/models" bash "$CODE/setup/download_datasets.sh" "$ROOT/data" "$PROFILE"
-df -h "$ROOT" | tail -1
-
-stamp "benchmark ($PROFILE)"
-OUT="$ROOT/results/$PROFILE"
-# RESET="m1 m2" (or RESET=all) discards those methods' earlier results, locally and in S3, so they are recomputed
+aws s3 sync "$S3C" "$CACHE_DIR" --only-show-errors || true
 for m in ${RESET:-}; do
-  if [ "$m" = all ]; then
-    rm -rf "$OUT"; aws s3 rm "s3://$BUCKET/results/$PROFILE" --recursive --only-show-errors || true
-    echo "[reset] all results of profile $PROFILE"; break
-  fi
-  for kind in mvs stereo pointcloud; do
-    rm -rf "$OUT/$kind/$m.jsonl" "$OUT/$kind/depth/$m" "$OUT/$kind/disp/$m" "$OUT/logs/${kind}_$m.log"
-    aws s3 rm "s3://$BUCKET/results/$PROFILE/$kind/$m.jsonl" --only-show-errors 2>/dev/null || true
-    aws s3 rm "s3://$BUCKET/results/$PROFILE/logs/${kind}_$m.log" --only-show-errors 2>/dev/null || true
+  if [ "$m" = all ]; then aws s3 rm "$S3R" --recursive --only-show-errors || true; break; fi
+  for k in mvs stereo pointcloud; do
+    aws s3 rm "$S3R/$k/$m.jsonl" --only-show-errors 2>/dev/null || true
+    aws s3 rm "$S3R/logs/${k}_$m.log" --only-show-errors 2>/dev/null || true
   done
-  echo "[reset] $m"
+  for k in mvs stereo; do aws s3 rm "$S3R/latency/${k}_$m.jsonl" --only-show-errors 2>/dev/null || true; done
 done
-# continue from results synced by an earlier instance (e.g. after a terminate) before resuming
-aws s3 sync "s3://$BUCKET/results/$PROFILE" "$OUT" --only-show-errors || true
-bash "$CODE/scripts/run_all.sh" "$PROFILE" "$ROOT/data" "$ROOT/models" "$OUT" "s3://$BUCKET/results/$PROFILE"
+aws s3 sync "$S3R" "$OUT" --only-show-errors || true
+
+( while sleep 300; do aws s3 sync "$OUT" "$S3R" --only-show-errors "${EXCL[@]}" >/dev/null 2>&1; done ) &
+SYNC_PID=$!
+trap 'kill $SYNC_PID 2>/dev/null; rm -f /run/mvs-busy' EXIT
+
+bash "$CODE/scripts/run_benchmark.sh" "$PROFILE" "$ROOT"
+rc=$?
+
+kill $SYNC_PID 2>/dev/null
 cp /var/log/mvs-run.log "$OUT/logs/instance.log" 2>/dev/null || true
-aws s3 sync "$OUT" "s3://$BUCKET/results/$PROFILE" --only-show-errors --exclude "*/depth/*" --exclude "*/ply/*"
-stamp "done"
+aws s3 sync "$OUT" "$S3R" --only-show-errors "${EXCL[@]}"
+aws s3 sync "$CACHE_DIR" "$S3C" --only-show-errors
+echo "===== $(date -u +%Y-%m-%dT%H:%M:%SZ) run_on_ec2 done (benchmark exit $rc)"
+exit $rc

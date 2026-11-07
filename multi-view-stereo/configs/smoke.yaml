@@ -1,0 +1,22 @@
+# CPU smoke profile: the full pipeline on the synthetic data of scripts/make_synthetic_data.py, in ~5 minutes on 2 CPU cores.
+#   python scripts/make_synthetic_data.py /tmp/mvs_smoke/data
+#   SKIP_SETUP=1 DEVICE=cpu MODELS_PYTHON=python3 bash scripts/run_benchmark.sh smoke /tmp/mvs_smoke
+stereo:
+  datasets:
+    middeval3: {limit: null}
+  methods: [sgbm, sgbm_fill]
+
+mvs:
+  nviews: [2, 3, 5]
+  datasets:
+    dtu:
+      scans: [1]
+      ref_stride: 2
+      work_wh: [320, 240]
+      learned_wh: [320, 240]
+      eval_wh: [320, 240]
+  methods: [planesweep_mean, planesweep_bestk, stereo_sgbm]
+  method_overrides:
+    planesweep_bestk: {nviews: [2, 5], max_refs: 2}
+  save_depth: qualitative
+  pointcloud: false
