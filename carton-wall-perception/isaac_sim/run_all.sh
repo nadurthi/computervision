@@ -23,6 +23,7 @@
 #   FRAMES=3  PICKS=5             workload size            SKIP_ASSETS=0     1 = do not download SimReady assets
 #   STEPS='smoke smoke_ids lidar_test box_wall unload_cell trailer_wall'   steps to run, in this order
 #   TRAILER_ARGS=''               extra args for trailer_wall.py (e.g. '--rows 1 --yaw 8')
+#   UNLOAD_PICKS=4  UNLOAD_ARGS=''  picks and extra args for trailer_unload.py
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="${MODE:-docker}"
@@ -89,7 +90,7 @@ isaac() {   # isaac <step-name> <script> <args...>   (runs one Isaac Python scri
 }
 
 # ---- 0) environment checks: rendering with and without RTX stable ids, and the ways of reading the lidar
-STEPS="${STEPS:-smoke smoke_ids lidar_test box_wall unload_cell trailer_wall}"
+STEPS="${STEPS:-smoke smoke_ids lidar_test box_wall unload_cell trailer_wall trailer_unload}"
 [ "${RUN_SCRIPTS:-1}" = "1" ] || STEPS="smoke smoke_ids lidar_test"
 want() { [[ " $STEPS " == *" $1 "* ]]; }
 echo "[run_all] steps: $STEPS"
@@ -102,6 +103,9 @@ want lidar_test && STEP_TIMEOUT=10m isaac lidar_test lidar_test.py --out /out/li
 want box_wall     && isaac box_wall box_wall_capture.py --frames "$FRAMES" --out /out/box_wall --box-usd-dir /simready ${EXTRA_ARGS:-}
 want unload_cell  && isaac unload_cell unload_cell.py --simready /simready --picks "$PICKS" --record /out/unload_cell ${EXTRA_ARGS:-}
 want trailer_wall && isaac trailer_wall trailer_wall.py --out /out/trailer_wall --box-usd-dir /simready ${TRAILER_ARGS:-}
+# ---- 4) trailer unloading with physics: FANUC CRX-10iA/L, suction, friction, conveyor out of the door
+want trailer_unload && isaac trailer_unload trailer_unload.py --simready /simready --out /out/trailer_unload \
+  --picks "${UNLOAD_PICKS:-4}" --collision-test ${UNLOAD_ARGS:-}
 
 ls -laR "$OUT" > "$OUT/listing.txt"
 

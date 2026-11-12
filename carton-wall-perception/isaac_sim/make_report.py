@@ -26,7 +26,7 @@ except Exception:  # pragma: no cover - optional
     plt = None
 
 RUN = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
-TAGS = re.compile(r"\[(smoke|lidar-test|box-wall|cell|trailer)\]")
+TAGS = re.compile(r"\[(smoke|lidar-test|box-wall|cell|trailer|unload)\]")
 ERRS = re.compile(r"Traceback|Error: |Segmentation fault|There was an error running python|ErrorException")
 
 
@@ -144,7 +144,7 @@ def steps():
 def section_overview():
     rows = []
     st = steps()
-    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell", "trailer_wall"):
+    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell", "trailer_wall", "trailer_unload"):
         s = log_summary(name)
         if s is None:
             continue
@@ -273,9 +273,39 @@ def section_trailer():
     return "<h2>Trailer wall</h2>" + info + "<div class='row'>" + "".join(figs) + "</div>"
 
 
+def section_unload():
+    d = os.path.join(RUN, "trailer_unload")
+    if not os.path.isdir(d):
+        return ""
+    import base64, json
+    figs = []
+    for name in ("wall_start.png", "wall_end.png"):
+        p = os.path.join(d, name)
+        if os.path.exists(p):
+            figs.append(f"<figure>{img_tag(Image.open(p).convert('RGB'), 640, name, rel(p))}"
+                        f"<figcaption>{name}</figcaption></figure>")
+    g = os.path.join(d, "unload.gif")
+    if os.path.exists(g) and os.path.getsize(g) < 25e6:
+        b64 = base64.b64encode(open(g, "rb").read()).decode()
+        figs.append(f"<figure><img src='data:image/gif;base64,{b64}' width=640><figcaption>unload.gif</figcaption></figure>")
+    ev = ""
+    e = os.path.join(d, "events.json")
+    if os.path.exists(e):
+        E = json.load(open(e))
+        rows = "".join(f"<tr><td>{p['box'].split('/')[-1]}</td><td>{p['mass_kg']}</td><td>{p['placed']}</td>"
+                       f"<td>{', '.join(f'{k.split(chr(47))[-1]} {c} cm' for k, c in p['neighbours_dragged_cm'])}</td></tr>"
+                       for p in E.get("picks", []))
+        col = "".join(f"<li>{c['link'].split('/')[-1]} touched {c['hit']} at {c['t_s']} s: stopped</li>"
+                      for c in E.get("collisions", []))
+        ev = (f"<table><tr><th>box</th><th>kg</th><th>placed</th><th>neighbours dragged</th></tr>{rows}</table>"
+              f"<p>Collisions:</p><ul>{col or '<li>none</li>'}</ul><p>Skipped (out of reach): "
+              f"{len(E.get('skipped', []))}</p>")
+    return "<h2>Trailer unloading (FANUC CRX-10iA/L)</h2>" + ev + "<div class='row'>" + "".join(figs) + "</div>"
+
+
 def section_logs():
     out = ["<h2>Log excerpts</h2>"]
-    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell", "trailer_wall"):
+    for name in ("smoke", "smoke_ids", "lidar_test", "box_wall", "unload_cell", "trailer_wall", "trailer_unload"):
         s = log_summary(name)
         if s is None:
             continue
@@ -305,7 +335,7 @@ code{font-size:12px}"""
 def main():
     when = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     body = [f"<h1>Isaac Sim box-wall run</h1><p>{html.escape(os.path.basename(RUN))} · report built {when}</p>",
-            section_overview(), section_smoke(), section_box_wall(), section_cell(), section_trailer(), section_logs()]
+            section_overview(), section_smoke(), section_box_wall(), section_cell(), section_trailer(), section_unload(), section_logs()]
     out = os.path.join(RUN, "report.html")
     with open(out, "w") as f:
         f.write(f"<!doctype html><html><head><meta charset='utf-8'><title>Isaac box-wall run</title>"
