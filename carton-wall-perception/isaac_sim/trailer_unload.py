@@ -1046,7 +1046,8 @@ def main():
         over = np.array([tool_x, BELT_Y, carry_z])
         place = np.array([tool_x, BELT_Y, BELT_TOP + h / 2 + 0.03 + off])
         # every leg is attempted even if one falls short, so the box is only ever released over the belt
-        legs = [move(np.array([x_after_pull, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,  # down, level
+        # straight down still pitched (levelling at the top would lift the wrist into the roof), then level
+        legs = [move(np.array([x_after_pull, face[1], carry_z]), a_pick, timeout=8.0) if not robot.stopped else False,
                 move(np.array([clear_x, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,
                 move(over, timeout=8.0) if not robot.stopped else False,
                 move(place, timeout=6.0) if not robot.stopped else False]
