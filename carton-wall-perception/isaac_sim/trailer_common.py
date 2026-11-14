@@ -90,6 +90,9 @@ def strip_physics(root, keep_root=True):
             break
         for q in inst:
             q.SetInstanceable(False)
+    joints = [q for q in Usd.PrimRange(root) if q.IsA(UsdPhysics.Joint)]
+    for q in joints:                                   # joints between stripped bodies only raise errors
+        q.SetActive(False)
     for q in Usd.PrimRange(root):
         if keep_root and q == root:
             continue

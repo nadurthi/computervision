@@ -275,6 +275,9 @@ class Fanuc:
         cup.CreateRadiusAttr(0.04); cup.CreateHeightAttr(args.tool_len)
         cup.CreateAxisAttr(name[-1].upper())
         UsdGeom.Xformable(cup).AddTranslateOp().Set(Gf.Vec3d(*(self.axis_local * (face + args.tool_len / 2))))
+        UsdPhysics.CollisionAPI.Apply(cup.GetPrim())        # the cup is a collision shape of the end-effector body
+        self.cup_path = self.ee_path + "/suction_cup"
+        world.reset()                                       # re-parse physics so the cup collider is included
         self.q_cmd = np.asarray(self.art.get_joint_positions(), float)
 
     # ---- state
@@ -461,7 +464,7 @@ def main():
     log(f"wall settled: largest box movement {100 * moved:.1f} cm")
     sim.snap("wall_start.png")
 
-    def move(target, a_des=np.array([1.0, 0.0, 0.0]), tol=0.006, timeout=8.0):
+    def move(target, a_des=np.array([1.0, 0.0, 0.0]), tol=0.01, timeout=8.0):
         """Straight-line tool motion at args.speed; False on collision stop or if the target is not reached."""
         p, _, _, _ = robot.tool()
         dist = np.linalg.norm(target - p)
@@ -476,6 +479,8 @@ def main():
                 return False
             if s >= 1 and err < tol and ang < 3.0:
                 return True
+        if err < 0.03 and ang < 6.0:                     # close enough (heavy box, joint limits)
+            return True
         log(f"target {np.round(target, 3).tolist()} not reached (error {100 * err:.1f} cm, {ang:.0f} deg)")
         return False
 
@@ -513,15 +518,23 @@ def main():
         robot.grip(b["prim"])
         for _ in range(10):
             sim.step(robot)
-        # pull straight out (this is what drags the neighbours), then clear the stack with a small lift
-        pulled = move(face - np.array([0.25, 0, 0]), timeout=6.0) and \
-            move(face - np.array([d + 0.12, 0, -0.02]), timeout=6.0)
+        # 1) slide it out by ~40 % of its depth while it still rests on the box below: friction drags the
+        #    neighbours a little; 2) lift 1 cm (top boxes have ~1.5 cm to the roof); 3) pull it clear
+        slide = min(0.18, 0.4 * d)
+        lift = min(0.01, max(0.0, tc.H - (face[2] + h / 2) - 0.004))
+        pulled = move(face - np.array([slide, 0, 0]), timeout=6.0) and \
+            move(face - np.array([slide, 0, -lift]), timeout=3.0) and \
+            move(face - np.array([d + 0.12, 0, -lift]), timeout=6.0)
         after = {k: box_pose(k)[0] for k in before}
         disp = sorted(((100 * np.linalg.norm(after[k] - before[k]), k) for k in before), reverse=True)[:3]
         log("  neighbours dragged: " + ", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in disp))
         if not pulled:
             robot.release()
-            break
+            done.add(i); EVENTS["skipped"].append(b["prim"])
+            if robot.stopped:
+                break
+            move(home, timeout=10.0)
+            continue
         # to the conveyor: belt stopped while placing, tool keeps pointing +x (box hangs in front of it)
         conveyor.set_speed(0.0)
         drop_x = base_xy[0] + 0.1
@@ -548,8 +561,9 @@ def main():
 
     if args.collision_test and not robot.stopped:
         log("collision test: driving the tool towards the left trailer wall")
-        p, _, _, _ = robot.tool()
-        move(np.array([p[0], -tc.W / 2 - 0.2, p[2]]), a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
+        start = np.array([base_xy[0] + 0.25, base_xy[1] - 0.45, 1.40])
+        move(start, a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
+        move(np.array([start[0], -tc.W / 2 - 0.2, start[2]]), a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
         for _ in range(60):                                            # show that it stays stopped
             sim.step(robot)
         if not robot.stopped:
@@ -570,8 +584,8 @@ def make_gif():
     f = sorted(glob.glob(os.path.join(args.out, "frames", "rgb_*.jpg")))
     if not f:
         return
-    step = max(1, len(f) // 300)
-    imgs = [Image.open(p).convert("RGB").resize((640, 360)) for p in f[::step]]
+    step = max(1, len(f) // 200)
+    imgs = [Image.open(p).convert("RGB").resize((480, 270)) for p in f[::step]]
     imgs[0].save(os.path.join(args.out, "unload.gif"), save_all=True, append_images=imgs[1:], duration=80, loop=0)
 
 
