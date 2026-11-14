@@ -191,6 +191,16 @@ class Conveyor:
         self.speed = speed
         log(f"conveyor x {self.x0:.1f}..{self.x1:.1f} m at {speed} m/s (out of the door at x=0)")
 
+    def add_transfer_plate(self, stage, x_end):
+        """Fixed, slippery plate between the belt end and the wall: boxes are put down across it and the belt
+        end, and the belt pulls them off; wall boxes nudged forward only ever touch this (non-moving) plate."""
+        steel = tc.material(stage, "/World/Looks/Plate", (0.70, 0.71, 0.72), 0.3, 0.8)
+        pm = tc.physics_material(stage, "/World/Physics/Plate", 0.05, 0.05)
+        L_ = x_end - self.x1
+        tc.cube(stage, "/World/Conveyor/TransferPlate", (self.x1 + L_ / 2, BELT_Y, BELT_TOP - 0.01),
+                (L_, BELT_W, 0.02), steel, "conveyor", collide=True, phys_mat=pm)
+        log(f"transfer plate x {self.x1:.2f}..{x_end:.2f} m")
+
     def set_speed(self, v):
         self.sv.GetSurfaceVelocityAttr().Set(Gf.Vec3f(-v, 0.0, 0.0))
 
@@ -485,6 +495,7 @@ def main():
     tc.build_lights(st, cam_x)
     conveyor = Conveyor(st, front - 0.30, args.belt_speed)          # stops 30 cm short of the wall: a moving belt
                                                                     # drags anything that touches it, even its end
+    conveyor.add_transfer_plate(st, front - 0.04)
     robot = Fanuc(st, base_xy)
     sim.camera((cam_x, -0.75, 1.9), (front + 0.2, 0.25, 1.25))
     robot.setup(sim.world)
@@ -600,24 +611,22 @@ def main():
         off = face[2] - (top_z - h / 2)                     # suction point relative to the box centre (<= 0)
         carry_z = max(BELT_TOP + h / 2 + 0.40, args.pedestal + h / 2 + 0.12) + off   # box bottom above the pedestal
         clear_x = wall_front - 0.08 - d
-        # at the belt the wrist turns 90 deg so the box hangs on the belt side (+y) of the cup: the tool stays in
-        # front of the robot instead of behind its base. Rotated, the box spans w along x and d along y.
-        side = np.array([0.0, 1.0, 0.0])
-        cx = min(base_xy[0] + 0.12, conveyor.x1 - w / 2 - 0.03)
-        over = np.array([cx, BELT_Y - d / 2, carry_z])
-        place = np.array([cx, BELT_Y - d / 2, BELT_TOP + h / 2 + 0.03 + off])
+        # put it down in front of the robot, on the transfer plate and the belt end (box front 8 cm from the wall)
+        tool_x = wall_front - 0.08 - d
+        over = np.array([tool_x, BELT_Y, carry_z])
+        place = np.array([tool_x, BELT_Y, BELT_TOP + h / 2 + 0.03 + off])
         # every leg is attempted even if one falls short, so the box is only ever released over the belt
         legs = [move(np.array([clear_x, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,
-                move(over, a_des=side, timeout=10.0) if not robot.stopped else False,
-                move(place, a_des=side, timeout=6.0) if not robot.stopped else False]
+                move(over, timeout=8.0) if not robot.stopped else False,
+                move(place, timeout=6.0) if not robot.stopped else False]
         ok = all(legs)
         if robot.stopped:                                   # collision while carrying: keep holding, stop
             break
         robot.release()
         for _ in range(30):
             sim.step(robot)
-        move(place - np.array([0, 0.10, 0]), a_des=side, timeout=3.0)          # back off the box, then up
-        move(place + np.array([0, -0.10, 0.30]), a_des=side, timeout=4.0)
+        move(place - np.array([0.10, 0, 0]), timeout=3.0)  # back off the box, then up
+        move(place + np.array([-0.10, 0, 0.30]), timeout=4.0)
         conveyor.set_speed(args.belt_speed)
         removed.add(i); picks += 1
         EVENTS["picks"].append({"box": b["prim"], "model": b["model"], "mass_kg": round(b["mass_kg"], 2),
