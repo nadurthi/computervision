@@ -75,7 +75,8 @@ except ImportError:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import trailer_common as tc                                           # noqa: E402
-from arm_kin import ChainFK, free_boxes, pick_waypoints, quat_to_R, suction_face  # noqa: E402
+from arm_kin import (ChainFK, free_boxes, orientation_error, pick_waypoints, quat_to_R,  # noqa: E402
+                     reference_orientation, suction_face)
 
 rng = np.random.default_rng(args.seed)
 DT = 1.0 / 120.0
@@ -395,6 +396,7 @@ class Robot:
         self.held = None
         self.box_touch = set()
         self.q_cmd = None
+        self.R_ref = None
         self.q0 = None
         self.fk = None
         self.home_target, self.front = home, front
@@ -484,6 +486,7 @@ class Robot:
             self.art.apply_action(ArticulationAction(joint_positions=self.q0_vec))
         self.q_cmd = np.asarray(self.art.get_joint_positions(), float)
         log(f"tool tip at start {np.round(self.tool()[0], 3).tolist()}, axis {np.round(self.tool()[1], 2).tolist()}")
+        self.R_ref = reference_orientation(self.tool()[3], self.axis_local)
 
     def apply_initial(self, q):
         """Start the articulation in q: joint state and drive target on every revolute joint (degrees)."""
@@ -553,13 +556,13 @@ class Robot:
 
     # ---- control
     def step_towards(self, p_des, a_des=np.array([1.0, 0.0, 0.0]), v_ff=np.zeros(3)):
-        p, a, ee_p, _ = self.tool()
+        p, a, ee_p, R = self.tool()
         v = v_ff + 4.0 * (p_des - p)
         n = np.linalg.norm(v)
         vmax = 1.5 * args.speed * (0.6 if self.held else 1.0)
         if n > vmax:
             v *= vmax / n
-        w = 6.0 * np.cross(a, a_des)
+        w = 6.0 * orientation_error(R, self.axis_local, a_des, self.R_ref)   # full orientation: roll held too
         J = self.jacobian(p, ee_p)
         lam = 0.03
         dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * np.eye(6), np.concatenate([v, w])) * DT
@@ -573,6 +576,20 @@ class Robot:
     def hold(self):
         self.q_cmd = np.asarray(self.art.get_joint_positions(), float)
         self.art.apply_action(ArticulationAction(joint_positions=self.q_cmd))
+
+    def state_str(self, name, target=None, a_des=None):
+        """Tool tip / axis / joint angles (and the held box), for the per-leg log."""
+        p, a, _, _ = self.tool()
+        q = np.degrees(np.asarray(self.art.get_joint_positions(), float))
+        out = f"{name:8s} tip {np.round(p, 3).tolist()} axis {np.round(a, 2).tolist()}"
+        if target is not None:
+            out += f" (target {np.round(target, 3).tolist()} axis {np.round(a_des, 2).tolist()})"
+        out += f" q {np.round(q).astype(int).tolist()}"
+        if self.held:
+            bp, bq = SingleXFormPrim(self.held).get_world_pose()
+            out += f" box {self.held.split('/')[-1]} at {np.round(np.asarray(bp, float), 3).tolist()} " \
+                   f"tilt {np.degrees(np.arccos(np.clip(quat_to_R(np.asarray(bq, float))[2, 2], -1, 1))):.0f} deg"
+        return out
 
     def hold_cmd(self):                                     # keep the last command (no drift while waiting)
         self.art.apply_action(ArticulationAction(joint_positions=self.q_cmd))
@@ -687,6 +704,7 @@ class Sim:
                 robot.hold()
                 EVENTS["collisions"].append(robot.stopped)
                 log(f"COLLISION: {link.split('/')[-1]} touched {other} at t={self.n * DT:.2f} s -> robot stopped")
+                log("    at " + robot.state_str("collision"))
         if self.n % args.frame_every == 0:
             self.snap()
 
@@ -833,7 +851,11 @@ def main():
         theta = wp["theta"]
 
         def go(name, timeout=8.0):
-            return move(WP[name][0], WP[name][1], timeout=timeout) if not robot.stopped else False
+            if robot.stopped:
+                return False
+            ok_ = move(WP[name][0], WP[name][1], timeout=timeout)
+            log("    leg " + robot.state_str(name, WP[name][0], WP[name][1]) + ("" if ok_ else "  (NOT reached)"))
+            return ok_
 
         def phase(name):
             now = {k: box_pose(k)[0] for k in before}

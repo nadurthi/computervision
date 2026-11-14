@@ -38,6 +38,35 @@ def _rot(axis, ang):
     return M
 
 
+def rot_between(u, v):
+    """Smallest rotation taking unit vector u to unit vector v."""
+    u = np.asarray(u, float) / np.linalg.norm(u); v = np.asarray(v, float) / np.linalg.norm(v)
+    c = float(np.clip(u @ v, -1, 1)); k = np.cross(u, v); s_ = np.linalg.norm(k)
+    if s_ < 1e-9:
+        if c > 0:
+            return np.eye(3)
+        k = np.cross(u, [0, 0, 1] if abs(u[2]) < 0.9 else [1, 0, 0]); k /= np.linalg.norm(k)
+        return 2 * np.outer(k, k) - np.eye(3)
+    k /= s_
+    K = np.array([[0, -k[2], k[1]], [k[2], 0, -k[0]], [-k[1], k[0], 0]])
+    return np.eye(3) + s_ * K + (1 - c) * K @ K
+
+
+def orientation_error(R, a_local, a_des, R_ref):
+    """Rotation vector from the current tool orientation R to the desired one: the reference orientation R_ref
+    (tool along +x, fixed roll) turned the shortest way onto a_des. Constraining the roll too keeps a held box from
+    swinging about the tool axis. Without R_ref: axis only."""
+    if R_ref is None:
+        return np.cross(R @ a_local, a_des)
+    R_des = rot_between([1.0, 0.0, 0.0], a_des) @ R_ref
+    return _rotvec(R_des @ R.T)
+
+
+def reference_orientation(R, a_local):
+    """R turned so that the tool axis points exactly along +x (keeps its roll)."""
+    return rot_between(R @ a_local, [1.0, 0.0, 0.0]) @ R
+
+
 def _rotvec(R):
     c = np.clip((np.trace(R) - 1) / 2, -1, 1)
     a = math.acos(c)
@@ -180,10 +209,11 @@ class IKTracker:
     """Offline twin of Robot.step_towards: DLS resolved-rate steps along straight tool-tip lines, the tool axis
     turning towards a_des at the controller's rate, joints clipped to their limits."""
 
-    def __init__(self, fk, ee, axis_local, tool_off, q0):
+    def __init__(self, fk, ee, axis_local, tool_off, q0, full_orientation=True):
         self.fk, self.ee, self.ax, self.off = fk, ee, np.asarray(axis_local, float), tool_off
         self.lo, self.hi = fk.limits()
         self.q = np.array([q0.get(n, 0.0) for n in fk.names], float)
+        self.R_ref = reference_orientation(self.tool()[2], self.ax) if full_orientation else None
 
     def qmap(self, q=None):
         return dict(zip(self.fk.names, self.q if q is None else q))
@@ -212,9 +242,9 @@ class IKTracker:
         for k in range(1, n + 1):
             p_des = p0 + (target - p0) * k / n
             for _ in range(iters):
-                p, a, _, _ = self.tool()
+                p, a, R, _ = self.tool()
                 v = p_des - p
-                w = 0.57 * np.cross(a, a_des)              # ~ the controller's 6/s orientation rate per 2 cm step
+                w = 0.57 * orientation_error(R, self.ax, a_des, self.R_ref)   # ~ the controller's 6/s rate per step
                 J = self.jac()
                 dq = J.T @ np.linalg.solve(J @ J.T + 0.03 ** 2 * np.eye(6), np.concatenate([v, w]))
                 self.q = np.clip(self.q + dq, self.lo, self.hi)

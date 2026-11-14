@@ -34,6 +34,7 @@ ap.add_argument("--tool-len", type=float, default=0.15)
 ap.add_argument("--no-pitch", action="store_true")
 ap.add_argument("--belt-y", type=float, default=0.88)
 ap.add_argument("--verbose", action="store_true")
+ap.add_argument("--order", nargs="*", type=int, default=None, help="force this pick order (box indices)")
 args = ap.parse_args()
 
 SH_Z, SH_R, WRIST, CUP_R, BELT_TOP = 0.75, 0.35, 0.1925, 0.05, 0.90
@@ -68,11 +69,17 @@ def run(standoff, pedestal, roof_margin):
     worst = {"roof": 9.0, "side": 9.0, "floor": 9.0}
     legs_out = []
 
+    held = {"box": None}                                 # (size, offset of box centre from the tip, in tool frame)
+    cup = np.array([[0, r * math.cos(t), r * math.sin(t)] for r in (0.05,) for t in np.linspace(0, 2 * math.pi, 12)])
+    cup = np.vstack([cup + ax_ * s_ for s_ in (0.0, args.tool_len) for ax_ in [fk.tool_axis(ee)]])
+
     def clearance(t):
-        _, _, _, W = t.tool()
+        p_tip, a, R, W = t.tool()
         out = {"roof": 9.0, "side": 9.0, "floor": 9.0, "who": ""}
-        for b in moving:
-            P = pts[b] @ W[b][:3, :3].T + W[b][:3, 3]
+        extra = {"cup": cup @ W[ee][:3, :3].T + W[ee][:3, 3]}
+        if held["box"] is not None:
+            extra["box"] = held["box"] @ R.T + p_tip           # box corners, fixed in the tool frame
+        for b, P in [*((b, pts[b] @ W[b][:3, :3].T + W[b][:3, 3]) for b in moving), *extra.items()]:
             r = tc.H - P[:, 2].max()
             if r < out["roof"]:
                 out["roof"], out["who"] = r, b.split("/")[-1]
@@ -113,6 +120,11 @@ def run(standoff, pedestal, roof_margin):
         if not reach:
             break
         top_z, _, i, face = max(reach)
+        if args.order and picks < len(args.order):
+            i = args.order[picks]
+            b = plan[i]
+            face = ak.suction_face(np.array(b["center_m"]), b["size_m"], tc.H, roof_margin)
+            top_z = b["center_m"][2] + b["size_m"][2] / 2
         b = plan[i]
         t = aabb(b)
         col = [aabb(o)["lo"][0] for j, o in enumerate(plan) if j not in removed and j != i
@@ -122,6 +134,14 @@ def run(standoff, pedestal, roof_margin):
                                not args.no_pitch, args.belt_y, BELT_TOP, pedestal)
         name = f"box_{i:03d}@{face[2]:.2f}m/{math.degrees(wp['theta']):.0f}deg"
         for lname, p, a in wp["legs"]:
+            if lname == "slide":                         # gripped: box hangs at its pose relative to the tool
+                p_tip, _, R, _ = ik.tool()
+                bd, bw, bh = b["size_m"]
+                C = np.array(b["center_m"]) + np.array([[sx * bd / 2, sy * bw / 2, sz * bh / 2]
+                                                        for sx in (-1, 1) for sy in (-1, 1) for sz in (-1, 1)])
+                held["box"] = (C - p_tip) @ R                   # world corners -> tool frame (R^T applied per row)
+            if lname == "back":
+                held["box"] = None
             leg(lname, p, a, name)
         leg("home", home, (1, 0, 0), name)
         removed.add(i); picks += 1
