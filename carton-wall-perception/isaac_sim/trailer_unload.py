@@ -597,24 +597,27 @@ def main():
             log("  pull fell short; carrying it to the belt anyway")
         # to the conveyor: belt stopped while placing, tool keeps pointing +x (box hangs in front of it)
         conveyor.set_speed(0.0)
-        drop_x = base_xy[0] + 0.05
         off = face[2] - (top_z - h / 2)                     # suction point relative to the box centre (<= 0)
         carry_z = max(BELT_TOP + h / 2 + 0.40, args.pedestal + h / 2 + 0.12) + off   # box bottom above the pedestal
         clear_x = wall_front - 0.08 - d
-        over = np.array([drop_x - d / 2, BELT_Y, carry_z])
-        place = np.array([drop_x - d / 2, BELT_Y, BELT_TOP + h / 2 + 0.03 + off])
+        # at the belt the wrist turns 90 deg so the box hangs on the belt side (+y) of the cup: the tool stays in
+        # front of the robot instead of behind its base. Rotated, the box spans w along x and d along y.
+        side = np.array([0.0, 1.0, 0.0])
+        cx = min(base_xy[0] + 0.12, conveyor.x1 - w / 2 - 0.03)
+        over = np.array([cx, BELT_Y - d / 2, carry_z])
+        place = np.array([cx, BELT_Y - d / 2, BELT_TOP + h / 2 + 0.03 + off])
         # every leg is attempted even if one falls short, so the box is only ever released over the belt
         legs = [move(np.array([clear_x, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,
-                move(over, timeout=8.0) if not robot.stopped else False,
-                move(place, timeout=5.0) if not robot.stopped else False]
+                move(over, a_des=side, timeout=10.0) if not robot.stopped else False,
+                move(place, a_des=side, timeout=6.0) if not robot.stopped else False]
         ok = all(legs)
         if robot.stopped:                                   # collision while carrying: keep holding, stop
             break
         robot.release()
         for _ in range(30):
             sim.step(robot)
-        move(place - np.array([0.10, 0, 0]), timeout=3.0)
-        move(place + np.array([-0.10, 0, 0.30]), timeout=4.0)
+        move(place - np.array([0, 0.10, 0]), a_des=side, timeout=3.0)          # back off the box, then up
+        move(place + np.array([0, -0.10, 0.30]), a_des=side, timeout=4.0)
         conveyor.set_speed(args.belt_speed)
         removed.add(i); picks += 1
         EVENTS["picks"].append({"box": b["prim"], "model": b["model"], "mass_kg": round(b["mass_kg"], 2),
@@ -629,7 +632,8 @@ def main():
 
     if args.collision_test and not robot.stopped:
         log("collision test: driving the tool towards the left trailer wall")
-        start = np.array([base_xy[0] + 0.25, base_xy[1] - 0.45, 1.40])
+        move(home, timeout=10.0)
+        start = np.array([base_xy[0] + 0.25, base_xy[1] - 0.45, args.pedestal + 0.25])
         move(start, a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
         move(np.array([start[0], -tc.W / 2 - 0.2, start[2]]), a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
         for _ in range(60):                                            # show that it stays stopped
