@@ -330,28 +330,53 @@ class Fanuc:
         self.art.apply_action(ArticulationAction(joint_positions=self.q_cmd))
 
     # ---- suction
-    def grip(self, box_path):
+    def _qf(self, R):
+        q = R_to_quat(R)
+        return Gf.Quatf(float(q[0]), *map(float, q[1:]))
+
+    def grip(self, box_path, compliant=False):
+        """Suction as a physics joint between the end-effector link and the box, at their current relative pose.
+        compliant=True: every direction is locked except world-vertical translation (+/-3 cm), so while the box
+        is slid out it rests on the box below with its own weight only (realistic friction, no arm pushing down).
+        compliant=False: fully rigid, for lifting and carrying."""
+        self.release(keep_filter=True)
         _, _, ee_p, R = self.tool()
         bp, bq = SingleXFormPrim(box_path).get_world_pose()
+        bp = np.asarray(bp, float)
         Rb = quat_to_R(np.asarray(bq, float))
-        p_rel = R.T @ (np.asarray(bp, float) - ee_p)
-        q_rel = R_to_quat(R.T @ Rb)
-        j = UsdPhysics.FixedJoint.Define(self.stage, "/World/Grip")
+        if compliant:
+            # joint frame = world axes at the box origin, so the free axis is world z
+            j = UsdPhysics.Joint.Define(self.stage, "/World/Grip")
+            j.CreateLocalPos0Attr(Gf.Vec3f(*(R.T @ (bp - ee_p))))
+            j.CreateLocalRot0Attr(self._qf(R.T))
+            j.CreateLocalPos1Attr(Gf.Vec3f(0, 0, 0))
+            j.CreateLocalRot1Attr(self._qf(Rb.T))
+            prim = j.GetPrim()
+            for dof in ("transX", "transY", "rotX", "rotY", "rotZ"):
+                lim = UsdPhysics.LimitAPI.Apply(prim, dof)
+                lim.CreateLowAttr(1.0); lim.CreateHighAttr(-1.0)          # low > high: locked
+            lim = UsdPhysics.LimitAPI.Apply(prim, "transZ")
+            lim.CreateLowAttr(-0.03); lim.CreateHighAttr(0.03)
+        else:
+            j = UsdPhysics.FixedJoint.Define(self.stage, "/World/Grip")
+            j.CreateLocalPos0Attr(Gf.Vec3f(*(R.T @ (bp - ee_p))))
+            j.CreateLocalRot0Attr(self._qf(R.T @ Rb))
+            j.CreateLocalPos1Attr(Gf.Vec3f(0, 0, 0))
+            j.CreateLocalRot1Attr(Gf.Quatf(1, 0, 0, 0))
         j.CreateBody0Rel().SetTargets([self.ee_path])
         j.CreateBody1Rel().SetTargets([box_path])
-        j.CreateLocalPos0Attr(Gf.Vec3f(*p_rel))
-        j.CreateLocalRot0Attr(Gf.Quatf(float(q_rel[0]), *map(float, q_rel[1:])))
-        j.CreateLocalPos1Attr(Gf.Vec3f(0, 0, 0))
-        j.CreateLocalRot1Attr(Gf.Quatf(1, 0, 0, 0))
         j.CreateExcludeFromArticulationAttr(True)
-        fp = UsdPhysics.FilteredPairsAPI.Apply(self.stage.GetPrimAtPath(box_path))
-        for lp in self.link_paths:                      # the held box does not collide with the arm
-            fp.CreateFilteredPairsRel().AddTarget(lp)
+        if self.held != box_path:
+            fp = UsdPhysics.FilteredPairsAPI.Apply(self.stage.GetPrimAtPath(box_path))
+            for lp in self.link_paths:                      # the held box does not collide with the arm
+                fp.CreateFilteredPairsRel().AddTarget(lp)
         self.held = box_path
+        self.compliant = compliant
 
-    def release(self):
-        if self.held:
+    def release(self, keep_filter=False):
+        if self.stage.GetPrimAtPath("/World/Grip"):
             self.stage.RemovePrim("/World/Grip")
+        if not keep_filter:
             self.held = None
 
 
@@ -530,15 +555,18 @@ def main():
             if robot.stopped:
                 break
             unreachable.add(i); EVENTS["skipped"].append(b["prim"]); move(home); continue
-        robot.grip(b["prim"])
+        robot.grip(b["prim"], compliant=True)
         for _ in range(10):
             sim.step(robot)
         # 1) slide it out by ~40 % of its depth while it still rests on the box below: friction drags the
         #    neighbours a little; 2) lift 1 cm (top boxes have ~1.5 cm to the roof); 3) pull it clear
         slide = min(0.18, 0.4 * d)
         lift = min(0.01, max(0.0, tc.H - (face[2] + h / 2) - 0.004))
-        pulled = move(face - np.array([slide, 0, 0]), timeout=6.0) and \
-            move(face - np.array([slide, 0, -lift]), timeout=3.0) and \
+        pulled = move(face - np.array([slide, 0, 0]), timeout=6.0)
+        robot.grip(b["prim"], compliant=False)              # rigid from here: lift and carry
+        for _ in range(5):
+            sim.step(robot)
+        pulled = pulled and move(face - np.array([slide, 0, -lift]), timeout=3.0) and \
             move(np.array([wall_front - 0.08 - d, face[1], face[2] + lift]), timeout=8.0)   # clear of the whole wall
         after = {k: box_pose(k)[0] for k in before}
         disp = sorted(((100 * np.linalg.norm(after[k] - before[k]), k) for k in before), reverse=True)[:3]
