@@ -279,6 +279,13 @@ def free_boxes(plan, removed):
     return out
 
 
+def blocked_by_conveyor(center, size, belt_y, belt_w, belt_top):
+    """A box low down behind the conveyor end (overlapping the belt's width, centre below belt height + 15 cm):
+    the arm cannot reach its face without passing through the belt slab, so it is left for a lower takeaway."""
+    d, w, h = size
+    return abs(center[1] - belt_y) < (w + belt_w) / 2 - 0.02 and center[2] < belt_top + 0.15
+
+
 def suction_face(center, size, H, roof):
     """Suction point on the front face: its centre, but at most `roof` below the roof (and >= 6 cm above the
     box bottom). center = box centre."""
@@ -288,7 +295,8 @@ def suction_face(center, size, H, roof):
     return np.array([center[0] - d / 2, center[1], gz])
 
 
-def pick_waypoints(face, size, top_z, tgt_aabb, col_front, wall_front, H, cup_r, pitch, belt_y, belt_top, pedestal):
+def pick_waypoints(face, size, top_z, tgt_aabb, col_front, wall_front, H, cup_r, pitch, belt_y, belt_top, pedestal,
+                   min_release=0.0):
     """Tool-tip poses (point, axis) for one pick. pitch=True tilts the tool up to 25 deg for high suction points so
     the wrist and forearm stay under the roof; the box is pulled only until it clears its own column, lowered while
     still tilted and carried over the belt and put down with the same tilt (box level); the tool levels after release."""
@@ -303,7 +311,10 @@ def pick_waypoints(face, size, top_z, tgt_aabb, col_front, wall_front, H, cup_r,
     off = face[2] - (top_z - h / 2)                               # suction point relative to the box centre
     carry_z = max(belt_top + h / 2 + 0.40, pedestal + h / 2 + 0.12) + off
     tool_x = wall_front - 0.08 - d
-    place = np.array([tool_x, belt_y, belt_top + h / 2 + 0.03 + off])
+    # release height: box bottom 3 cm above the belt, but the tool tip at least min_release above the belt top so the
+    # forearm (which sits below the tip when the arm reaches down sideways over the belt) clears the belt slab; a box
+    # gripped near its bottom edge then drops a few cm, landing level
+    place = np.array([tool_x, belt_y, max(belt_top + h / 2 + 0.03 + off, belt_top + min_release + 0.40 * math.sin(theta))])
     return dict(theta=theta, a_pick=a_pick, face=f, slide=slide, lift=lift, carry_z=carry_z, legs=[
         ("approach", f - np.array([0.15, 0, 0]), a_pick),
         ("contact", f - np.array([0.008, 0, 0]), a_pick),

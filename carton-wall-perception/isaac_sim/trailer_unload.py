@@ -75,7 +75,7 @@ except ImportError:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import trailer_common as tc                                           # noqa: E402
-from arm_kin import (ChainFK, free_boxes, orientation_error, pick_waypoints, quat_to_R,  # noqa: E402
+from arm_kin import (ChainFK, blocked_by_conveyor, free_boxes, orientation_error, pick_waypoints, quat_to_R,  # noqa: E402
                      reference_orientation, suction_face)
 
 rng = np.random.default_rng(args.seed)
@@ -92,13 +92,16 @@ ROBOTS = {
                  # plinth the folded arm lifts the A3 housing into the roof when it puts boxes on the belt
                  pedestal=0.0, plinth=0.90, standoff=2.20, tool_len=0.15, sh_z=0.75, sh_r=0.35, wrist=0.1925,
                  reach=2.60,            # A2-A3 1.25 m + A3-A5 1.50 m = 2.75 m, minus a margin
-                 roof=0.28, mass_max=15.0, belt_y=0.88, belt_w=0.45, start_search=True),
+                 # level tool (no pitch) with the suction point >= 25 cm under the roof, and release with the tool
+                 # tip >= 27 cm above the belt: forearm >= 8 cm clear of the belt slab (tools/arm_clearance.py)
+                 roof=0.25, pitch=False, min_release=0.27,
+                 mass_max=15.0, belt_y=0.88, belt_w=0.45, start_search=True),
     "fanuc": dict(name="FANUC CRX-10iA/L",
                   usd=["/Isaac/Robots/Fanuc/CRX10IAL/crx10ial.usd", "/Isaac/Robots/FANUC/CRX10IAL/crx10ial.usd"],
                   search=["/Isaac/Robots/Fanuc"], key="crx10",
                   pedestal=1.30, plinth=0.45, standoff=0.62, tool_len=0.10, sh_z=0.245, sh_r=0.0, wrist=0.0,
                   reach=1.28,           # 1418 mm reach minus a margin
-                  roof=0.22, mass_max=5.0, belt_y=0.70, belt_w=0.55, start_search=False),
+                  roof=0.22, pitch=False, min_release=0.0, mass_max=5.0, belt_y=0.70, belt_w=0.55, start_search=False),
 }
 SPEC = ROBOTS[args.robot]
 for k in ("pedestal", "standoff", "tool_len"):
@@ -810,7 +813,10 @@ def main():
             d, w, h = plan[i]["size_m"]
             # suction point on the front face: its centre, but at least SPEC["roof"] below the roof
             face = suction_face(p + np.array([0, 0, h / 2]), (d, w, h), tc.H, SPEC["roof"])   # origin = bottom centre
-            if in_reach(face):
+            if blocked_by_conveyor(p + np.array([0, 0, h / 2]), (d, w, h), BELT_Y, BELT_W, BELT_TOP):
+                EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
+                log(f"{plan[i]['prim']} is low behind the conveyor end: left for a lower takeaway")
+            elif in_reach(face):
                 reach.append((p[2] + h, -abs(face[1] - base_xy[1]), i, face))
             else:
                 EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
@@ -846,7 +852,7 @@ def main():
             if min(hi_t[1], a["hi"][1]) - max(lo_t[1], a["lo"][1]) > 0 and a["lo"][2] < lo_t[2] + 0.02:
                 col.append(a["lo"][0])
         wp = pick_waypoints(face, (d, w, h), top_z, tgt0, min(col) if col else wall_front, wall_front, tc.H,
-                            robot.cup_r, args.robot == "kuka", BELT_Y, BELT_TOP, args.pedestal)
+                            robot.cup_r, SPEC["pitch"], BELT_Y, BELT_TOP, args.pedestal, SPEC["min_release"])
         WP = {n: (np.asarray(pt, float), np.asarray(a, float)) for n, pt, a in wp["legs"]}
         theta = wp["theta"]
 

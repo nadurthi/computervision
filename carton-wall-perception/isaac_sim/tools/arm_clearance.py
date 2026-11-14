@@ -32,6 +32,7 @@ ap.add_argument("--seed", type=int, default=3)
 ap.add_argument("--rows", type=int, default=2)
 ap.add_argument("--tool-len", type=float, default=0.15)
 ap.add_argument("--no-pitch", action="store_true")
+ap.add_argument("--min-release", type=float, default=0.0, help="tool tip at least this far above the belt at release")
 ap.add_argument("--belt-y", type=float, default=0.88)
 ap.add_argument("--verbose", action="store_true")
 ap.add_argument("--order", nargs="*", type=int, default=None, help="force this pick order (box indices)")
@@ -66,7 +67,20 @@ def run(standoff, pedestal, roof_margin):
         return {"standoff": standoff, "pedestal": pedestal, "error": "no start pose"}
     ik = ak.IKTracker(fk, ee, fk.tool_axis(ee), args.tool_len, q0)
     moving = [b for b in pts if b not in fk.roots and b != fk.bodies[0]]
-    worst = {"roof": 9.0, "side": 9.0, "floor": 9.0}
+    worst = {"roof": 9.0, "side": 9.0, "floor": 9.0, "belt": 9.0}
+    # conveyor belt slab + transfer plate (kinematic / static colliders in the simulation)
+    bw = 0.45 / 2
+    obst = [(np.array([-2.5, args.belt_y - bw, 0.86]), np.array([front - 0.30, args.belt_y + bw, 0.90])),
+            (np.array([front - 0.30, args.belt_y - bw, 0.88]), np.array([front - 0.04, args.belt_y + bw, 0.90]))]
+
+    def sdist(P):                                       # signed distance of points to the obstacle boxes (<0 inside)
+        best = 9.0
+        for lo, hi in obst:
+            d = np.maximum(lo - P, P - hi)              # per axis, > 0 outside
+            out_ = np.linalg.norm(np.maximum(d, 0), axis=1)
+            ins = d.max(axis=1)
+            best = min(best, float(np.where(ins < 0, ins, out_).min()))
+        return best
     legs_out = []
 
     held = {"box": None}                                 # (size, offset of box centre from the tip, in tool frame)
@@ -75,7 +89,7 @@ def run(standoff, pedestal, roof_margin):
 
     def clearance(t):
         p_tip, a, R, W = t.tool()
-        out = {"roof": 9.0, "side": 9.0, "floor": 9.0, "who": ""}
+        out = {"roof": 9.0, "side": 9.0, "floor": 9.0, "belt": 9.0, "who": "", "bwho": ""}
         extra = {"cup": cup @ W[ee][:3, :3].T + W[ee][:3, 3]}
         if held["box"] is not None:
             extra["box"] = held["box"] @ R.T + p_tip           # box corners, fixed in the tool frame
@@ -85,19 +99,26 @@ def run(standoff, pedestal, roof_margin):
                 out["roof"], out["who"] = r, b.split("/")[-1]
             out["side"] = min(out["side"], SIDE - np.abs(P[:, 1]).max())
             out["floor"] = min(out["floor"], P[:, 2].min())
+            if b != "box":
+                sd = sdist(P)
+                if sd < out["belt"]:
+                    out["belt"], out["bwho"] = sd, b.split("/")[-1] + "@" + str(np.round(P[np.argmin(P[:, 2])], 2).tolist()) \
+                        + " tip " + str(np.round(p_tip, 2).tolist())
         return out
 
     def leg(name, target, a, box=""):
-        acc = {"roof": 9.0, "side": 9.0, "floor": 9.0, "who": ""}
+        acc = {"roof": 9.0, "side": 9.0, "floor": 9.0, "belt": 9.0, "who": "", "bwho": ""}
         def on(t):
             c = clearance(t)
             if c["roof"] < acc["roof"]:
                 acc["roof"], acc["who"] = c["roof"], c["who"]
             acc["side"] = min(acc["side"], c["side"]); acc["floor"] = min(acc["floor"], c["floor"])
+            if c["belt"] < acc["belt"]:
+                acc["belt"], acc["bwho"] = c["belt"], c["bwho"]
         err, ang = ik.move(np.asarray(target, float), a, on_step=on)
         for k in worst:
             worst[k] = min(worst[k], acc[k])
-        legs_out.append((box, name, acc["roof"], acc["who"], acc["side"], err, ang))
+        legs_out.append((box, name, acc["roof"], acc["who"], acc["side"], err, ang, acc["belt"], acc["bwho"]))
         return err, ang
 
     leg("home", home, (1, 0, 0))
@@ -113,7 +134,9 @@ def run(standoff, pedestal, roof_margin):
             wc = face - np.array([args.tool_len + WRIST, 0, 0])
             dxy = wc[:2] - base[:2]; r = max(np.linalg.norm(dxy), 1e-6)
             sh = base + np.array([0, 0, SH_Z]) + np.r_[dxy / r * SH_R, 0.0]
-            if np.linalg.norm(wc - sh) < args.reach:
+            if ak.blocked_by_conveyor(b["center_m"], b["size_m"], args.belt_y, 0.45, BELT_TOP):
+                unreachable.add(i)
+            elif np.linalg.norm(wc - sh) < args.reach:
                 reach.append((b["center_m"][2] + b["size_m"][2] / 2, -abs(face[1]), i, face))
             else:
                 unreachable.add(i)
@@ -131,7 +154,7 @@ def run(standoff, pedestal, roof_margin):
                and min(t["hi"][1], aabb(o)["hi"][1]) - max(t["lo"][1], aabb(o)["lo"][1]) > 0
                and aabb(o)["lo"][2] < t["lo"][2] + 0.02]
         wp = ak.pick_waypoints(face, b["size_m"], top_z, t, min(col) if col else wall_front, wall_front, tc.H, CUP_R,
-                               not args.no_pitch, args.belt_y, BELT_TOP, pedestal)
+                               not args.no_pitch, args.belt_y, BELT_TOP, pedestal, args.min_release)
         name = f"box_{i:03d}@{face[2]:.2f}m/{math.degrees(wp['theta']):.0f}deg"
         for lname, p, a in wp["legs"]:
             if lname == "slide":                         # gripped: box hangs at its pose relative to the tool
@@ -156,10 +179,10 @@ for so in args.standoff:
             if "error" in r:
                 print(r); continue
             w = r["worst"]
-            bad = [l for l in r["legs"] if l[2] < 0.03 or l[4] < 0.03 or l[5] > 0.03]
+            bad = [l for l in r["legs"] if (l[2] < 0.03 and l[3] != "box") or l[4] < 0.03 or l[5] > 0.03 or l[7] < 0.02]
             print(f"standoff {so:.2f} pedestal {pd:.2f} roof-margin {rm:.2f}: {r['picks']} picks, "
                   f"{r['unreachable']} unreachable so far; min clearance roof {100 * w['roof']:.1f} cm, "
-                  f"side {100 * w['side']:.1f} cm, floor {100 * w['floor']:.1f} cm; {len(bad)} bad legs")
+                  f"side {100 * w['side']:.1f} cm, floor {100 * w['floor']:.1f} cm, belt {100 * w['belt']:.1f} cm; {len(bad)} bad legs")
             for l in (r["legs"] if args.verbose else bad):
                 print(f"   {l[0]:28s} {l[1]:9s} roof {100 * l[2]:6.1f} cm ({l[3]}) side {100 * l[4]:6.1f} cm "
-                      f"tracking err {100 * l[5]:5.1f} cm {l[6]:4.0f} deg")
+                      f"belt {100 * l[7]:6.1f} cm ({l[8]}) tracking err {100 * l[5]:5.1f} cm {l[6]:4.0f} deg")
