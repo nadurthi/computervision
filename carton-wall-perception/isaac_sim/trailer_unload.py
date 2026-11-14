@@ -225,6 +225,7 @@ class Fanuc:
         log(f"robot {url}: articulation {self.art_path}, {len(self.links)} links, {n_col} collision shapes")
         self.stopped = None
         self.held = None
+        self.box_touch = set()
         self.q_cmd = None
 
     def setup(self, world):
@@ -424,7 +425,11 @@ class Sim:
         self.world.step(render=False)
         self.n += 1
         if robot is not None and robot.stopped is None:
-            hits = [(l, o) for l, o in robot.contacts() if o.startswith("/World/Trailer")]
+            cs = robot.contacts()
+            for l, o in cs:
+                if o.startswith("/World/Boxes/") and not (robot.held and o.startswith(robot.held)):
+                    robot.box_touch.add((l.split("/")[-1], "/".join(o.split("/")[:4]).split("/")[-1]))
+            hits = [(l, o) for l, o in cs if o.startswith("/World/Trailer")]
             if hits:
                 link, other = hits[0]
                 robot.stopped = {"link": link, "hit": other, "t_s": round(self.n * DT, 3)}
@@ -550,11 +555,20 @@ def main():
         log(f"pick {picks + 1}: {b['prim']} ({b['model']}, {b['mass_kg']:.1f} kg) top at "
             f"{face[2] + h / 2:.2f} m")
         before = {o["prim"]: box_pose(o["prim"])[0] for j, o in enumerate(plan) if j not in removed and j != i}
+        def phase(name):
+            now = {k: box_pose(k)[0] for k in before}
+            top = sorted(((100 * np.linalg.norm(now[k] - before[k]), k) for k in before), reverse=True)[:3]
+            log(f"  after {name}: neighbours moved " + ", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in top)
+                + (f"; arm touched boxes {sorted(robot.box_touch)}" if robot.box_touch else "; arm touched no box"))
+            robot.box_touch.clear()
+
+        robot.box_touch.clear()
         approach = face - np.array([0.15, 0, 0])
         if not move(approach) or not move(face - np.array([0.008, 0, 0]), timeout=4.0):
             if robot.stopped:
                 break
             unreachable.add(i); EVENTS["skipped"].append(b["prim"]); move(home); continue
+        phase("approach")
         robot.grip(b["prim"], compliant=True)
         for _ in range(10):
             sim.step(robot)
@@ -563,11 +577,13 @@ def main():
         slide = min(0.18, 0.4 * d)
         lift = min(0.01, max(0.0, tc.H - (face[2] + h / 2) - 0.004))
         pulled = move(face - np.array([slide, 0, 0]), timeout=6.0)
+        phase("slide (compliant grip)")
         robot.grip(b["prim"], compliant=False)              # rigid from here: lift and carry
         for _ in range(5):
             sim.step(robot)
         pulled = pulled and move(face - np.array([slide, 0, -lift]), timeout=3.0) and \
             move(np.array([wall_front - 0.08 - d, face[1], face[2] + lift]), timeout=8.0)   # clear of the whole wall
+        phase("lift + pull clear")
         after = {k: box_pose(k)[0] for k in before}
         disp = sorted(((100 * np.linalg.norm(after[k] - before[k]), k) for k in before), reverse=True)[:3]
         log("  neighbours dragged: " + ", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in disp))
