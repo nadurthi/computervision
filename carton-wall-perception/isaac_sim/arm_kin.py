@@ -119,6 +119,12 @@ class ChainFK:
         self.sign = 1.0
         self.stage, self.log = stage, log
 
+    def shift(self, d):
+        """Move the whole robot (its base) by the vector d, e.g. with a mobile platform."""
+        for b in self.W0:
+            self.W0[b] = self.W0[b].copy()
+            self.W0[b][:3, 3] += np.asarray(d, float)
+
     def fk(self, q):                                       # q: {joint name: rad}
         W = {b: self.W0[b] for b in self.roots}
         for j in self.joints:
@@ -286,6 +292,12 @@ def blocked_by_conveyor(center, size, belt_y, belt_w, belt_top):
     return abs(center[1] - belt_y) < (w + belt_w) / 2 - 0.02 and center[2] < belt_top + 0.15
 
 
+def roof_ok(face, H, roof, pitch=False):
+    """A level tool can only grip a box whose suction point is at most `roof` below the roof (+1 cm): a short box
+    at the top whose lowest usable suction point (6 cm above its bottom) is higher is left in place."""
+    return face[2] <= H - roof + (0.13 if pitch else 0.01)      # pitching the tool up buys ~12 cm
+
+
 def suction_face(center, size, H, roof):
     """Suction point on the front face: its centre, but at most `roof` below the roof (and >= 6 cm above the
     box bottom). center = box centre."""
@@ -296,12 +308,13 @@ def suction_face(center, size, H, roof):
 
 
 def pick_waypoints(face, size, top_z, tgt_aabb, col_front, wall_front, H, cup_r, pitch, belt_y, belt_top, pedestal,
-                   min_release=0.0):
+                   min_release=0.0, pitch_from=None):
     """Tool-tip poses (point, axis) for one pick. pitch=True tilts the tool up to 25 deg for high suction points so
     the wrist and forearm stay under the roof; the box is pulled only until it clears its own column, lowered while
     still tilted and carried over the belt and put down with the same tilt (box level); the tool levels after release."""
     d, w, h = size
-    theta = math.radians(float(np.clip((face[2] - (H - 0.42)) / 0.12 * 25.0, 0.0, 25.0))) if pitch else 0.0
+    p0 = (H - 0.42) if pitch_from is None else pitch_from                # pitch only above this suction height
+    theta = math.radians(float(np.clip((face[2] - p0) / 0.10 * 25.0, 0.0, 25.0))) if pitch else 0.0
     a_pick = np.array([math.cos(theta), 0.0, math.sin(theta)])
     x_ = np.array([1.0, 0.0, 0.0])
     f = face - np.array([cup_r * math.sin(theta), 0, 0])          # lowest rim of the tilted cup touches first

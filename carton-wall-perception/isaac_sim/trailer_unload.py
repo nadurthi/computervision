@@ -15,6 +15,10 @@ conveyor that carries them out of the trailer.
   * Gripper stoppers (--stoppers, on by default): before a pull the gripper extends three thin plates -- left, right
     and bottom -- just in front of the neighbouring boxes beside and under the chosen one, so friction cannot drag
     those out with it. They are kinematic bodies (immovable), retracted once the box is clear of the wall.
+  * AMR (--amr, on for the KUKA): robot, on-board conveyor and transfer plate ride on a mobile platform that drives
+    along the trailer. It starts --drive-in m back and drives up to the wall, drives forward again whenever no free
+    box is in reach (keeping its plate clear of the wall), and backs off at the end. A fixed boom conveyor from the
+    dock door runs under the on-board belt's rear end, so boxes always transfer onto it.
   * The robot starts in a collision-free pose found by forward kinematics on the asset's USD joints (the KR210's
     zero pose would reach into the wall).
 
@@ -50,6 +54,10 @@ ap.add_argument("--tool-axis", default="auto", choices=["auto", "x", "y", "z", "
 ap.add_argument("--pedestal", type=float, default=None, help="robot pedestal height (m) (default per robot)")
 ap.add_argument("--standoff", type=float, default=None, help="robot base distance from the wall face (m)")
 ap.add_argument("--collision-test", action="store_true", help="at the end, drive the tool into the side wall")
+ap.add_argument("--amr", type=int, default=None, help="1: robot + conveyor ride on an AMR that drives along the "
+                "trailer (default: on for kuka)")
+ap.add_argument("--drive-in", type=float, default=1.0, help="AMR starts this far back and drives up to the wall (m)")
+ap.add_argument("--amr-speed", type=float, default=0.25, help="AMR driving speed (m/s)")
 ap.add_argument("--frame-every", type=int, default=10, help="physics steps between saved frames (120 Hz)")
 ap.add_argument("--res", type=int, nargs=2, default=[1280, 720])
 args, _ = ap.parse_known_args()
@@ -63,7 +71,7 @@ simulation_app = SimulationApp({"headless": not args.gui, "width": args.res[0], 
 import numpy as np                                                    # noqa: E402
 import omni.replicator.core as rep                                    # noqa: E402
 import omni.usd                                                       # noqa: E402
-from pxr import Gf, PhysicsSchemaTools, PhysxSchema, Usd, UsdGeom, UsdPhysics  # noqa: E402
+from pxr import Gf, PhysicsSchemaTools, PhysxSchema, Usd, UsdGeom, UsdPhysics, UsdShade  # noqa: E402
 from isaacsim.core.api import World                                  # noqa: E402
 from isaacsim.core.prims import SingleArticulation, SingleXFormPrim  # noqa: E402
 from isaacsim.core.utils.types import ArticulationAction            # noqa: E402
@@ -75,7 +83,7 @@ except ImportError:
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import trailer_common as tc                                           # noqa: E402
-from arm_kin import (ChainFK, blocked_by_conveyor, free_boxes, orientation_error, pick_waypoints, quat_to_R,  # noqa: E402
+from arm_kin import (ChainFK, blocked_by_conveyor, free_boxes, roof_ok, orientation_error, pick_waypoints, quat_to_R,  # noqa: E402
                      reference_orientation, suction_face)
 
 rng = np.random.default_rng(args.seed)
@@ -90,27 +98,30 @@ ROBOTS = {
                  # on the floor, 2.2 m from the wall face: chosen with tools/arm_clearance.py on the asset's
                  # collision meshes (>= 19 cm roof and 10 cm side clearance over 25 picks); closer or on a
                  # plinth the folded arm lifts the A3 housing into the roof when it puts boxes on the belt
-                 pedestal=0.0, plinth=0.90, standoff=2.20, tool_len=0.15, sh_z=0.75, sh_r=0.35, wrist=0.1925,
+                 # on an AMR (deck 0.25 m), 2.4 m from the wall face (tools/arm_clearance.py: 24 picks clean)
+                 pedestal=0.25, plinth=0.90, standoff=2.40, tool_len=0.15, sh_z=0.75, sh_r=0.35, wrist=0.1925, amr=1,
                  reach=2.60,            # A2-A3 1.25 m + A3-A5 1.50 m = 2.75 m, minus a margin
                  # level tool (no pitch) with the suction point >= 25 cm under the roof, and release with the tool
                  # tip >= 27 cm above the belt: forearm >= 8 cm clear of the belt slab (tools/arm_clearance.py)
-                 roof=0.25, pitch=False, min_release=0.27,
+                 # pitch the tool up (<= 25 deg) only for suction points above that, i.e. short top-row boxes
+                 roof=0.25, pitch=True, min_release=0.27,
                  mass_max=15.0, belt_y=0.88, belt_w=0.45, start_search=True),
     "fanuc": dict(name="FANUC CRX-10iA/L",
                   usd=["/Isaac/Robots/Fanuc/CRX10IAL/crx10ial.usd", "/Isaac/Robots/FANUC/CRX10IAL/crx10ial.usd"],
                   search=["/Isaac/Robots/Fanuc"], key="crx10",
-                  pedestal=1.30, plinth=0.45, standoff=0.62, tool_len=0.10, sh_z=0.245, sh_r=0.0, wrist=0.0,
+                  pedestal=1.30, plinth=0.45, standoff=0.62, tool_len=0.10, sh_z=0.245, sh_r=0.0, wrist=0.0, amr=0,
                   reach=1.28,           # 1418 mm reach minus a margin
                   roof=0.22, pitch=False, min_release=0.0, mass_max=5.0, belt_y=0.70, belt_w=0.55, start_search=False),
 }
 SPEC = ROBOTS[args.robot]
-for k in ("pedestal", "standoff", "tool_len"):
+for k in ("pedestal", "standoff", "tool_len", "amr"):
     if getattr(args, k) is None:
         setattr(args, k, SPEC[k])
 BELT_Y, BELT_W, BELT_TOP = SPEC["belt_y"], SPEC["belt_w"], 0.90
 BELT_X_OUT = -2.5                                    # belt end, outside the trailer (dock side)
 AXES = {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1]}
-EVENTS = {"robot": SPEC["name"], "stoppers": bool(args.stoppers), "picks": [], "collisions": [], "skipped": []}
+EVENTS = {"robot": SPEC["name"], "stoppers": bool(args.stoppers), "amr": bool(args.amr), "picks": [], "collisions": [],
+          "skipped": [], "amr_moves": []}
 
 
 def log(*a):
@@ -176,38 +187,42 @@ def build_boxes(stage):
 
 
 class Conveyor:
-    """Kinematic belt slab with PhysX surface velocity (-x, out of the door), tiled SimReady conveyor visuals."""
+    """Belt slab (kinematic, PhysX surface velocity -x, out of the door) with tiled SimReady conveyor visuals.
+    vis_root: Xform the visuals go under (an AMR's Xform makes them move with it); the collider is a separate prim
+    whose own translate op is shifted by shift(dx), so it can ride on the AMR as well."""
 
-    def __init__(self, stage, x_start, speed):
-        self.x0, self.x1 = BELT_X_OUT, x_start
+    def __init__(self, stage, x0, x1, speed, name="Conveyor", top=None, vis_root="/World/Conveyor", simready=True):
+        top = BELT_TOP if top is None else top
+        self.x0, self.x1, self.top = x0, x1, top
         length = self.x1 - self.x0
         cx = (self.x0 + self.x1) / 2
         url = None
-        import glob
-        c = sorted(glob.glob(os.path.join(args.simready, "conveyor_belt_a08", "simready_usd", "*.usd")))
-        if c:
-            url = c[0]
+        if simready:
+            import glob
+            c = sorted(glob.glob(os.path.join(args.simready, "conveyor_belt_a08", "simready_usd", "*.usd")))
+            url = c[0] if c else None
         n = max(1, int(math.ceil(length / 2.0)))
         seg = length / n
-        UsdGeom.Xform.Define(stage, "/World/Conveyor")
+        if not stage.GetPrimAtPath(vis_root):
+            UsdGeom.Xform.Define(stage, vis_root)
+        frame = tc.material(stage, "/World/Looks/ConveyorFrame", (0.25, 0.27, 0.30), 0.5, 0.5)
         for k in range(n):
-            p = f"/World/Conveyor/Seg{k:02d}"
+            p = f"{vis_root}/{name}Seg{k:02d}"
             UsdGeom.Xform.Define(stage, p)
             UsdGeom.Xformable(stage.GetPrimAtPath(p)).AddTranslateOp().Set(
                 Gf.Vec3d(self.x0 + (k + 0.5) * seg, BELT_Y, 0.0))
             ok = False
             if url:
                 try:
-                    tc.visual_box(stage, p, url, (seg, BELT_W + 0.12, BELT_TOP))
+                    tc.visual_box(stage, p, url, (seg, BELT_W + 0.12, top))
                     ok = True
                 except Exception as e:
                     log("conveyor model failed:", e)
             if not ok:
-                frame = tc.material(stage, "/World/Looks/ConveyorFrame", (0.25, 0.27, 0.30), 0.5, 0.5)
-                tc.cube(stage, p + "/frame", (0, 0, BELT_TOP / 2 - 0.02), (seg, BELT_W + 0.1, BELT_TOP - 0.04), frame)
+                tc.cube(stage, p + "/frame", (0, 0, top / 2 - 0.02), (seg, BELT_W + 0.1, top - 0.04), frame)
         belt_mat = tc.material(stage, "/World/Looks/Belt", (0.08, 0.08, 0.08), 0.7)
         pm = tc.physics_material(stage, "/World/Physics/Belt", 0.9, 0.8)
-        self.belt = tc.cube(stage, "/World/Conveyor/Belt", (cx, BELT_Y, BELT_TOP - 0.02), (length, BELT_W, 0.04),
+        self.belt = tc.cube(stage, f"/World/{name}Belt", (cx, BELT_Y, top - 0.02), (length, BELT_W, 0.04),
                             belt_mat, "conveyor", collide=True, phys_mat=pm)
         if url:
             UsdGeom.Imageable(self.belt).MakeInvisible()
@@ -217,20 +232,86 @@ class Conveyor:
         self.sv.CreateSurfaceVelocityEnabledAttr(True)
         self.sv.CreateSurfaceVelocityAttr(Gf.Vec3f(-speed, 0.0, 0.0))
         self.speed = speed
-        log(f"conveyor x {self.x0:.1f}..{self.x1:.1f} m at {speed} m/s (out of the door at x=0)")
+        self.movers = [(UsdGeom.Xformable(self.belt).GetOrderedXformOps()[0], np.array([cx, BELT_Y, top - 0.02]))]
+        log(f"{name}: x {self.x0:.2f}..{self.x1:.2f} m, top {top:.2f} m, {speed} m/s towards the door")
 
-    def add_transfer_plate(self, stage, x_end):
-        """Fixed, slippery plate between the belt end and the wall: boxes are put down across it and the belt
-        end, and the belt pulls them off; wall boxes nudged forward only ever touch this (non-moving) plate."""
+    def add_transfer_plate(self, stage, x_end, name="TransferPlate"):
+        """Slippery plate between the belt end and the wall (kinematic so it can ride on an AMR): boxes are put
+        down across it and the belt end, and the belt pulls them off; wall boxes nudged forward only ever touch
+        this non-moving surface."""
         steel = tc.material(stage, "/World/Looks/Plate", (0.70, 0.71, 0.72), 0.3, 0.8)
         pm = tc.physics_material(stage, "/World/Physics/Plate", 0.05, 0.05)
         L_ = x_end - self.x1
-        tc.cube(stage, "/World/Conveyor/TransferPlate", (self.x1 + L_ / 2, BELT_Y, BELT_TOP - 0.01),
-                (L_, BELT_W, 0.02), steel, "conveyor", collide=True, phys_mat=pm)
+        c = np.array([self.x1 + L_ / 2, BELT_Y, self.top - 0.01])
+        plate = tc.cube(stage, f"/World/{name}", c, (L_, BELT_W, 0.02), steel, "conveyor", collide=True, phys_mat=pm)
+        UsdPhysics.RigidBodyAPI.Apply(plate.GetPrim()).CreateKinematicEnabledAttr(True)
+        self.movers.append((UsdGeom.Xformable(plate).GetOrderedXformOps()[0], c))
         log(f"transfer plate x {self.x1:.2f}..{x_end:.2f} m")
+
+    def shift(self, dx):
+        for op, c in self.movers:
+            op.Set(Gf.Vec3d(*map(float, c + np.array([dx, 0.0, 0.0]))))
 
     def set_speed(self, v):
         self.sv.GetSurfaceVelocityAttr().Set(Gf.Vec3f(-v, 0.0, 0.0))
+
+
+class AMR:
+    """Mobile platform that carries the robot and its conveyor along the trailer (x). Chassis (kinematic collider +
+    visual), the on-board belt and transfer plate move with it; a fixed boom conveyor from the dock door runs under
+    the on-board belt's rear end (2 cm lower), long enough for the whole travel, so boxes always drop onto it."""
+
+    def __init__(self, stage, base_x0, travel, speed):
+        self.x0, self.dx = base_x0, 0.0
+        deck = args.pedestal
+        root = UsdGeom.Xform.Define(stage, "/World/AMR")
+        self.vis_op = UsdGeom.Xformable(root).AddTranslateOp()
+        self.vis_op.Set(Gf.Vec3d(0, 0, 0))
+        body = tc.material(stage, "/World/Looks/AMRBody", (0.18, 0.19, 0.21), 0.5, 0.3)
+        stripe = tc.material(stage, "/World/Looks/AMRStripe", (0.95, 0.72, 0.05), 0.4, 0.2)
+        x_rear, x_front = base_x0 - 1.30, base_x0 + 0.70
+        c = np.array([(x_rear + x_front) / 2, 0.0, deck / 2])
+        size = (x_front - x_rear, 1.24, deck)
+        tc.cube(stage, "/World/AMR/BodyVis", c, size, body, "amr")
+        tc.cube(stage, "/World/AMR/Stripe", (c[0], 0.0, deck + 0.003), (size[0] - 0.04, size[1] - 0.04, 0.006),
+                stripe, "amr")
+        for k, (wx, wy) in enumerate([(x_rear + 0.2, -0.55), (x_rear + 0.2, 0.55), (x_front - 0.2, -0.55),
+                                      (x_front - 0.2, 0.55)]):
+            w = UsdGeom.Cylinder.Define(stage, f"/World/AMR/Wheel{k}")
+            w.CreateRadiusAttr(0.09); w.CreateHeightAttr(0.08); w.CreateAxisAttr("Y")
+            UsdGeom.Xformable(w).AddTranslateOp().Set(Gf.Vec3d(wx, wy, 0.09))
+            UsdShade.MaterialBindingAPI.Apply(w.GetPrim()).Bind(body)
+        col = tc.cube(stage, "/World/AMRChassis", c, (size[0], size[1], deck - 0.01), None, None, collide=True)
+        UsdGeom.Imageable(col).MakeInvisible()
+        UsdPhysics.RigidBodyAPI.Apply(col.GetPrim()).CreateKinematicEnabledAttr(True)
+        self.chassis = col
+        self.chassis_mv = (UsdGeom.Xformable(col).GetOrderedXformOps()[0], c)
+        # boom (fixed, from the dock) and the on-board belt + transfer plate (move with the AMR)
+        board_rear = base_x0 - 1.20
+        self.boom = Conveyor(stage, BELT_X_OUT, board_rear + travel + 0.30, speed, "Boom", BELT_TOP - 0.02,
+                             "/World/BoomVis", simready=False)
+        self.belt = Conveyor(stage, board_rear, base_x0 + args.standoff - 0.30, speed, "AMRBelt", BELT_TOP, "/World/AMR")
+        self.belt.add_transfer_plate(stage, base_x0 + args.standoff - 0.04, "AMRTransferPlate")
+        log(f"AMR: deck {deck:.2f} m, base x {base_x0:.2f} m, travel up to {travel:.1f} m at {args.amr_speed} m/s")
+
+    def filter_robot(self, stage, link_paths):
+        fp = UsdPhysics.FilteredPairsAPI.Apply(self.chassis.GetPrim())
+        for lp in link_paths:
+            fp.CreateFilteredPairsRel().AddTarget(lp)
+
+    def set_dx(self, dx):
+        self.dx = dx
+        self.vis_op.Set(Gf.Vec3d(dx, 0, 0))
+        op, c = self.chassis_mv
+        op.Set(Gf.Vec3d(*map(float, c + np.array([dx, 0.0, 0.0]))))
+        self.belt.shift(dx)
+
+    def set_speed(self, v):                               # the on-board belt (where boxes are put down)
+        self.belt.set_speed(v)
+
+    @property
+    def plate_front(self):
+        return self.x0 + self.dx + args.standoff - 0.04
 
 
 def resolve_robot_url():
@@ -372,7 +453,7 @@ class Robot:
         url = resolve_robot_url()
         self.stage = stage
         self.base = np.array([base_xy[0], base_xy[1], args.pedestal + 0.005])   # 5 mm above the floor/plinth
-        if args.pedestal > 0.005:
+        if args.pedestal > 0.005 and not args.amr:         # on the AMR the chassis is the pedestal
             steel = tc.material(stage, "/World/Looks/Pedestal", (0.95, 0.75, 0.10), 0.5, 0.3)
             tc.cube(stage, "/World/Cell/Pedestal", (base_xy[0], base_xy[1], args.pedestal / 2),
                     (SPEC["plinth"], SPEC["plinth"], args.pedestal), steel, "robot_base", collide=True)
@@ -594,6 +675,12 @@ class Robot:
                    f"tilt {np.degrees(np.arccos(np.clip(quat_to_R(np.asarray(bq, float))[2, 2], -1, 1))):.0f} deg"
         return out
 
+    def teleport(self, dx):
+        """Shift the (fixed-base) articulation along x with its platform: root pose moved, joints unchanged."""
+        p, q = self.art.get_world_pose()
+        self.art.set_world_pose(position=np.asarray(p, float) + np.array([dx, 0.0, 0.0]), orientation=q)
+        self.base = self.base + np.array([dx, 0.0, 0.0])
+
     def hold_cmd(self):                                     # keep the last command (no drift while waiting)
         self.art.apply_action(ArticulationAction(joint_positions=self.q_cmd))
 
@@ -729,25 +816,37 @@ def main():
     trailer_pm = tc.physics_material(st, "/World/Physics/Trailer", 0.5, 0.45)
     plan = build_boxes(st)
     front = min(b["front_face_x_m"] for b in plan)
-    base_xy = (front - args.standoff, 0.0)
+    # with the AMR the robot starts --drive-in metres further back and drives up to the wall first
+    drive_in = args.drive_in if args.amr else 0.0
+    base_xy = (front - args.standoff - drive_in, 0.0)
     cam_x = front - (4.4 if args.robot == "kuka" else 4.6)
     if args.robot == "kuka":
-        home = np.array([front - 0.45, base_xy[1], 1.60])
+        home_rel = np.array([args.standoff - 0.45, 0.0, 1.60 - args.pedestal])   # tool home, relative to the base
     else:
-        home = np.array([base_xy[0] + 0.35, base_xy[1], args.pedestal + 0.55])
+        home_rel = np.array([0.35, 0.0, 0.55])
+    home = np.array([base_xy[0], base_xy[1], args.pedestal]) + home_rel
     tc.build_trailer(st, collide=True, phys_mat=trailer_pm)
     tc.build_lights(st, cam_x)
-    conveyor = Conveyor(st, front - 0.30, args.belt_speed)          # stops 30 cm short of the wall: a moving belt
+    amr = None
+    if args.amr:
+        # travel: the drive-in plus the wall's depth (two rows, misaligned faces)
+        travel = drive_in + max(b["front_face_x_m"] + b["size_m"][0] for b in plan) - front
+        amr = AMR(st, base_xy[0], travel, args.belt_speed)
+        conveyor = amr
+    else:
+        conveyor = Conveyor(st, front - 0.30, args.belt_speed)      # stops 30 cm short of the wall: a moving belt
                                                                     # drags anything that touches it, even its end
-    conveyor.add_transfer_plate(st, front - 0.04)
+        conveyor.add_transfer_plate(st, front - 0.04)
     robot = Robot(st, base_xy, home, front)
+    if amr is not None:
+        amr.filter_robot(st, robot.link_paths)
     stoppers = None
     if args.stoppers:
         stoppers = Stoppers(st, (base_xy[0] - 1.0, 0.0))
         stoppers.filter_robot(st, robot.link_paths)
         sim.stoppers = stoppers
-    if args.robot == "kuka":
-        sim.camera((cam_x, -1.0, 2.3), (front - 0.2, 0.3, 1.3))
+    if args.robot == "kuka":                # over the AMR's left shoulder: the wall, stoppers and belt in view
+        sim.camera((front - 3.9, -1.05, 2.45), (front + 0.1, 0.35, 1.15))
     else:
         sim.camera((cam_x, -0.75, 1.9), (front + 0.2, 0.25, 1.25))
     robot.setup(sim.world)
@@ -790,9 +889,31 @@ def main():
         sh = robot.base + np.array([0, 0, SPEC["sh_z"]]) + np.r_[dxy / r * SPEC["sh_r"], 0.0]
         return np.linalg.norm(wc - sh) < SPEC["reach"]
 
+    def drive(dx):
+        """AMR drives dx along the trailer (robot at home, nothing held): platform, belt, plate and robot move."""
+        nonlocal home
+        if amr is None or abs(dx) < 0.02 or robot.stopped:
+            return
+        x_from = robot.base[0]
+        log(f"AMR drives {'forward' if dx > 0 else 'back'} {abs(dx):.2f} m (base x {x_from:.2f} -> {x_from + dx:.2f})")
+        n = max(1, int(abs(dx) / (args.amr_speed * DT)))
+        for k in range(n):
+            e0 = 0.5 - 0.5 * math.cos(math.pi * k / n)          # smooth start and stop
+            e1 = 0.5 - 0.5 * math.cos(math.pi * (k + 1) / n)
+            amr.set_dx(amr.dx + dx * (e1 - e0))
+            robot.teleport(dx * (e1 - e0))
+            robot.hold_cmd()
+            sim.step(robot)
+            if robot.stopped:
+                break
+        home = robot.base + home_rel
+        EVENTS["amr_moves"].append({"from_x": round(x_from, 3), "to_x": round(robot.base[0], 3), "t_s": round(sim.n * DT, 2)})
+        log(f"  AMR at base x {robot.base[0]:.2f}; tool at {np.round(robot.tool()[0], 3).tolist()}")
+
     if not move(home, timeout=12.0):
         log("could not reach the home pose; check --tool-axis / --pedestal")
-    removed, unreachable, picks = set(), set(), 0
+    drive(drive_in)                                                      # up to the wall
+    removed, unreachable, blocked, picks = set(), set(), set(), 0
     while picks < (args.picks or 10 ** 6) and not robot.stopped:
         for j, o in enumerate(plan):                          # live poses; a box that left the wall is removed
             if j in removed:
@@ -806,7 +927,7 @@ def main():
             else:
                 o["center_m"] = c.tolist()
         wall_front = min(o["center_m"][0] - o["half_extent_xy_m"][0] for j, o in enumerate(plan) if j not in removed)
-        cand = [i for i in free_boxes(plan, removed) if i not in unreachable]
+        cand = [i for i in free_boxes(plan, removed) if i not in unreachable and i not in blocked]
         reach = []
         for i in cand:
             p, _ = box_pose(plan[i]["prim"])
@@ -814,15 +935,41 @@ def main():
             # suction point on the front face: its centre, but at least SPEC["roof"] below the roof
             face = suction_face(p + np.array([0, 0, h / 2]), (d, w, h), tc.H, SPEC["roof"])   # origin = bottom centre
             if blocked_by_conveyor(p + np.array([0, 0, h / 2]), (d, w, h), BELT_Y, BELT_W, BELT_TOP):
-                EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
+                EVENTS["skipped"].append(plan[i]["prim"]); blocked.add(i)
                 log(f"{plan[i]['prim']} is low behind the conveyor end: left for a lower takeaway")
+            elif not roof_ok(face, tc.H, SPEC["roof"], SPEC["pitch"]):
+                EVENTS["skipped"].append(plan[i]["prim"]); blocked.add(i)
+                log(f"{plan[i]['prim']} is too short to grip under the roof with a level tool (suction at "
+                    f"{face[2]:.2f} m): left in place")
             elif in_reach(face):
-                reach.append((p[2] + h, -abs(face[1] - base_xy[1]), i, face))
+                reach.append((p[2] + h, -abs(face[1] - robot.base[1]), i, face))
             else:
-                EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
-                log(f"{plan[i]['prim']} out of reach (face at {np.round(face, 2).tolist()}): left in place")
+                unreachable.add(i)
+                log(f"{plan[i]['prim']} out of reach from base x {robot.base[0]:.2f} (face at "
+                    f"{np.round(face, 2).tolist()})")
         if not reach:
-            log("no free box within reach (the rest is out of reach or under/behind boxes that are)")
+            # AMR: drive up so the nearest free box is args.standoff ahead, but keep the on-board transfer plate
+            # (and the chassis) clear of every box still in the wall
+            free_ok = [i for i in free_boxes(plan, removed) if i not in blocked]
+            if amr is not None and free_ok:
+                x_face = min(plan[i]["center_m"][0] - plan[i]["size_m"][0] / 2 for i in free_ok)
+                rem = [o for j, o in enumerate(plan) if j not in removed]
+                belt_side = [o["center_m"][0] - o["half_extent_xy_m"][0] for o in rem
+                             if abs(o["center_m"][1] - BELT_Y) < (o["size_m"][1] + BELT_W) / 2]
+                lim = min([x - 0.03 - (amr.plate_front - robot.base[0]) for x in belt_side] or [1e9])
+                lim = min(lim, min(o["center_m"][0] - o["half_extent_xy_m"][0] for o in rem) - 0.70 - 0.10)
+                target = min(x_face - args.standoff, lim)
+                if target - robot.base[0] > 0.05:
+                    move(home, timeout=10.0)
+                    drive(target - robot.base[0])
+                    unreachable.clear()
+                    continue
+            if amr is not None and not free_ok:
+                log("no free box left that the robot may pick (the rest is behind the conveyor end or out of reach)")
+            else:
+                log("no free box within reach (the rest is out of reach or under/behind boxes that are)")
+            for i in unreachable:
+                EVENTS["skipped"].append(plan[i]["prim"])
             break
         top_z, _, i, face = max(reach)                                 # highest first, then nearest the robot
         b = plan[i]
@@ -851,8 +998,10 @@ def main():
             a = box_aabb(o["prim"], o["size_m"])
             if min(hi_t[1], a["hi"][1]) - max(lo_t[1], a["lo"][1]) > 0 and a["lo"][2] < lo_t[2] + 0.02:
                 col.append(a["lo"][0])
-        wp = pick_waypoints(face, (d, w, h), top_z, tgt0, min(col) if col else wall_front, wall_front, tc.H,
-                            robot.cup_r, SPEC["pitch"], BELT_Y, BELT_TOP, args.pedestal, SPEC["min_release"])
+        place_front = amr.plate_front + 0.04 if amr is not None else wall_front     # boxes go onto the AMR's plate
+        wp = pick_waypoints(face, (d, w, h), top_z, tgt0, min(col) if col else wall_front, place_front, tc.H,
+                            robot.cup_r, SPEC["pitch"], BELT_Y, BELT_TOP, args.pedestal, SPEC["min_release"],
+                            tc.H - SPEC["roof"])
         WP = {n: (np.asarray(pt, float), np.asarray(a, float)) for n, pt, a in wp["legs"]}
         theta = wp["theta"]
 
@@ -946,6 +1095,9 @@ def main():
     args.frame_every = fe
     out_boxes = [o["prim"] for o in plan if box_pose(o["prim"])[0][0] < 0]
     log(f"{picks} boxes picked, {len(out_boxes)} carried out of the trailer by the conveyor")
+    if amr is not None and not robot.stopped:                          # back off the wall (it moves both ways)
+        move(home, timeout=10.0)
+        drive(-0.8)
 
     if args.collision_test and not robot.stopped:
         log("collision test: driving the tool sideways into the trailer wall (-y)")

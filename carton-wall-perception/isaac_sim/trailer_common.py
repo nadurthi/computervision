@@ -219,7 +219,7 @@ def plan_packed_wall(rng, rows=2, size_min=0.30, size_max=0.55, cube_ness=0.15, 
         return 0.5 * (w * abs(math.cos(yaw)) + d * abs(math.sin(yaw)))
 
     boxes, prev = [], None
-    usable = W - 0.03
+    usable = W - 0.12          # between the logistics posts/rails (5 cm into the box each side) + 1 cm play
     z_top = H - ceiling_clearance
     for row in range(rows):
         y = -usable / 2

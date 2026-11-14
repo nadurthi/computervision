@@ -32,6 +32,7 @@ ap.add_argument("--seed", type=int, default=3)
 ap.add_argument("--rows", type=int, default=2)
 ap.add_argument("--tool-len", type=float, default=0.15)
 ap.add_argument("--no-pitch", action="store_true")
+ap.add_argument("--amr", action="store_true", help="robot + conveyor on an AMR that drives up when nothing is in reach")
 ap.add_argument("--min-release", type=float, default=0.0, help="tool tip at least this far above the belt at release")
 ap.add_argument("--belt-y", type=float, default=0.88)
 ap.add_argument("--verbose", action="store_true")
@@ -70,8 +71,11 @@ def run(standoff, pedestal, roof_margin):
     worst = {"roof": 9.0, "side": 9.0, "floor": 9.0, "belt": 9.0}
     # conveyor belt slab + transfer plate (kinematic / static colliders in the simulation)
     bw = 0.45 / 2
-    obst = [(np.array([-2.5, args.belt_y - bw, 0.86]), np.array([front - 0.30, args.belt_y + bw, 0.90])),
-            (np.array([front - 0.30, args.belt_y - bw, 0.88]), np.array([front - 0.04, args.belt_y + bw, 0.90]))]
+    obst = [[np.array([-2.5, args.belt_y - bw, 0.86]), np.array([front - 0.30, args.belt_y + bw, 0.90])],
+            [np.array([front - 0.30, args.belt_y - bw, 0.88]), np.array([front - 0.04, args.belt_y + bw, 0.90])]]
+    if args.amr:                                       # fixed boom under the on-board belt's rear end (2 cm lower)
+        obst.append([np.array([-2.5, args.belt_y - bw, 0.84]), np.array([front + 1.0, args.belt_y + bw, 0.88])])
+    amr_x = {"place_front": front}
 
     def sdist(P):                                       # signed distance of points to the obstacle boxes (<0 inside)
         best = 9.0
@@ -97,7 +101,8 @@ def run(standoff, pedestal, roof_margin):
             r = tc.H - P[:, 2].max()
             if r < out["roof"]:
                 out["roof"], out["who"] = r, b.split("/")[-1]
-            out["side"] = min(out["side"], SIDE - np.abs(P[:, 1]).max())
+            if b != "box":                              # the carried box may rub the wall; the arm may not
+                out["side"] = min(out["side"], SIDE - np.abs(P[:, 1]).max())
             out["floor"] = min(out["floor"], P[:, 2].min())
             if b != "box":
                 sd = sdist(P)
@@ -136,11 +141,34 @@ def run(standoff, pedestal, roof_margin):
             sh = base + np.array([0, 0, SH_Z]) + np.r_[dxy / r * SH_R, 0.0]
             if ak.blocked_by_conveyor(b["center_m"], b["size_m"], args.belt_y, 0.45, BELT_TOP):
                 unreachable.add(i)
+            elif not ak.roof_ok(face, tc.H, roof_margin, not args.no_pitch):
+                unreachable.add(i)
             elif np.linalg.norm(wc - sh) < args.reach:
                 reach.append((b["center_m"][2] + b["size_m"][2] / 2, -abs(face[1]), i, face))
             else:
                 unreachable.add(i)
         if not reach:
+            free_ok = [k for k in ak.free_boxes(plan, removed)
+                       if not ak.blocked_by_conveyor(plan[k]["center_m"], plan[k]["size_m"], args.belt_y, 0.45, BELT_TOP)]
+            if args.amr and free_ok:
+                x_face = min(plan[k]["center_m"][0] - plan[k]["size_m"][0] / 2 for k in free_ok)
+                rem = [o for j, o in enumerate(plan) if j not in removed]
+                belt_side = [o["center_m"][0] - o["half_extent_xy_m"][0] for o in rem
+                             if abs(o["center_m"][1] - args.belt_y) < (o["size_m"][1] + 0.45) / 2]
+                lim = min([x - 0.03 - (amr_x["place_front"] - 0.04 - base[0]) for x in belt_side] or [1e9])
+                lim = min(lim, min(o["center_m"][0] - o["half_extent_xy_m"][0] for o in rem) - 0.80)
+                dx = min(x_face - standoff, lim) - base[0]
+                if dx > 0.05:
+                    leg("home", home, (1, 0, 0), "amr")
+                    d = np.array([dx, 0.0, 0.0])
+                    fk.shift(d); base[:] = base + d; home[:] = home + d
+                    for o_ in obst[:2]:
+                        o_[0][0] += dx; o_[1][0] += dx
+                    obst[0][0][0] -= dx                      # on-board belt rear end moves, boom stays
+                    amr_x["place_front"] += dx
+                    legs_out.append(("amr", f"drive {dx:+.2f}", 9, "", 9, 0, 0, 9, ""))
+                    unreachable.clear()
+                    continue
             break
         top_z, _, i, face = max(reach)
         if args.order and picks < len(args.order):
@@ -153,8 +181,9 @@ def run(standoff, pedestal, roof_margin):
         col = [aabb(o)["lo"][0] for j, o in enumerate(plan) if j not in removed and j != i
                and min(t["hi"][1], aabb(o)["hi"][1]) - max(t["lo"][1], aabb(o)["lo"][1]) > 0
                and aabb(o)["lo"][2] < t["lo"][2] + 0.02]
-        wp = ak.pick_waypoints(face, b["size_m"], top_z, t, min(col) if col else wall_front, wall_front, tc.H, CUP_R,
-                               not args.no_pitch, args.belt_y, BELT_TOP, pedestal, args.min_release)
+        wp = ak.pick_waypoints(face, b["size_m"], top_z, t, min(col) if col else wall_front,
+                               amr_x["place_front"] if args.amr else wall_front, tc.H, CUP_R,
+                               not args.no_pitch, args.belt_y, BELT_TOP, pedestal, args.min_release, tc.H - roof_margin)
         name = f"box_{i:03d}@{face[2]:.2f}m/{math.degrees(wp['theta']):.0f}deg"
         for lname, p, a in wp["legs"]:
             if lname == "slide":                         # gripped: box hangs at its pose relative to the tool
