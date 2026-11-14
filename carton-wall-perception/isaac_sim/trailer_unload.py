@@ -72,7 +72,7 @@ rng = np.random.default_rng(args.seed)
 DT = 1.0 / 120.0
 FANUC = ["/Isaac/Robots/Fanuc/CRX10IAL/crx10ial.usd", "/Isaac/Robots/FANUC/CRX10IAL/crx10ial.usd"]
 REACH = 1.40                                         # CRX-10iA/L reach 1418 mm
-BELT_Y, BELT_W, BELT_TOP = 0.80, 0.55, 0.72          # conveyor along the right-hand wall, towards the door
+BELT_Y, BELT_W, BELT_TOP = 0.70, 0.55, 0.90          # conveyor beside the robot, along the right-hand wall
 BELT_X_OUT = -2.5                                    # belt end, outside the trailer (dock side)
 AXES = {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1]}
 EVENTS = {"picks": [], "collisions": [], "skipped": []}
@@ -483,7 +483,7 @@ def main():
     cam_x = front - 4.6
     tc.build_trailer(st, collide=True, phys_mat=trailer_pm)
     tc.build_lights(st, cam_x)
-    conveyor = Conveyor(st, base_xy[0] + 0.45, args.belt_speed)
+    conveyor = Conveyor(st, front - 0.05, args.belt_speed)          # from the wall face out of the door
     robot = Fanuc(st, base_xy)
     sim.camera((cam_x, -0.75, 1.9), (front + 0.2, 0.25, 1.25))
     robot.setup(sim.world)
@@ -529,7 +529,7 @@ def main():
                 continue
             p, _ = box_pose(o["prim"])
             c = p + np.array([0, 0, o["size_m"][2] / 2])
-            if np.linalg.norm(c - np.asarray(o["center_m"])) > 0.15:
+            if (o["center_m"][2] - c[2] > 0.12) or (c[0] < front - 0.35):   # dropped or out of the wall
                 removed.add(j)
                 log(f"{o['prim']} left the wall (now at {np.round(c, 2).tolist()})")
                 EVENTS.setdefault("fell", []).append(o["prim"])
@@ -541,20 +541,22 @@ def main():
         for i in cand:
             p, _ = box_pose(plan[i]["prim"])
             d, w, h = plan[i]["size_m"]
-            face = np.array([p[0] - d / 2, p[1], p[2] + h / 2])      # front-face centre (box origin = bottom centre)
+            # suction point on the front face: its centre, but low enough that the wrist stays 22 cm below the roof
+            gz = max(min(p[2] + h / 2, tc.H - 0.22), p[2] + min(0.06, h / 2))
+            face = np.array([p[0] - d / 2, p[1], gz])                # box origin = bottom centre
             if np.linalg.norm(face - np.array([robot.tool_off, 0, 0]) - shoulder) < REACH - 0.12:
-                reach.append((face[2] + h / 2, -abs(face[1] - base_xy[1]), i, face))
+                reach.append((p[2] + h, -abs(face[1] - base_xy[1]), i, face))
             else:
                 EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
                 log(f"{plan[i]['prim']} out of reach (face at {np.round(face, 2).tolist()}): left in place")
         if not reach:
             log("no free box within reach (the rest is out of reach or under/behind boxes that are)")
             break
-        _, _, i, face = max(reach)                                     # highest first, then nearest the robot
+        top_z, _, i, face = max(reach)                                 # highest first, then nearest the robot
         b = plan[i]
         d, w, h = b["size_m"]
         log(f"pick {picks + 1}: {b['prim']} ({b['model']}, {b['mass_kg']:.1f} kg) top at "
-            f"{face[2] + h / 2:.2f} m")
+            f"{top_z:.2f} m, suction at {face[2]:.2f} m")
         before = {o["prim"]: box_pose(o["prim"])[0] for j, o in enumerate(plan) if j not in removed and j != i}
         def phase(name):
             now = {k: box_pose(k)[0] for k in before}
@@ -576,7 +578,7 @@ def main():
         # 1) slide it out by ~40 % of its depth while it still rests on the box below: friction drags the
         #    neighbours a little; 2) lift 1 cm (top boxes have ~1.5 cm to the roof); 3) pull it clear
         slide = min(0.18, 0.4 * d)
-        lift = min(0.01, max(0.0, tc.H - (face[2] + h / 2) - 0.004))
+        lift = min(0.01, max(0.0, tc.H - top_z - 0.004))
         pulled = move(face - np.array([slide, 0, 0]), timeout=6.0)
         phase("slide (compliant grip)")
         robot.grip(b["prim"], compliant=False)              # rigid from here: lift and carry
@@ -594,11 +596,12 @@ def main():
             log("  pull fell short; carrying it to the belt anyway")
         # to the conveyor: belt stopped while placing, tool keeps pointing +x (box hangs in front of it)
         conveyor.set_speed(0.0)
-        drop_x = base_xy[0] + 0.1
-        carry_z = max(BELT_TOP + h / 2 + 0.40, args.pedestal + h / 2 + 0.12)    # box bottom above the pedestal
+        drop_x = base_xy[0] + 0.30
+        off = face[2] - (top_z - h / 2)                     # suction point relative to the box centre (<= 0)
+        carry_z = max(BELT_TOP + h / 2 + 0.40, args.pedestal + h / 2 + 0.12) + off   # box bottom above the pedestal
         clear_x = wall_front - 0.08 - d
         over = np.array([drop_x - d / 2, BELT_Y, carry_z])
-        place = np.array([drop_x - d / 2, BELT_Y, BELT_TOP + h / 2 + 0.03])
+        place = np.array([drop_x - d / 2, BELT_Y, BELT_TOP + h / 2 + 0.03 + off])
         # every leg is attempted even if one falls short, so the box is only ever released over the belt
         legs = [move(np.array([clear_x, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,
                 move(over, timeout=8.0) if not robot.stopped else False,
