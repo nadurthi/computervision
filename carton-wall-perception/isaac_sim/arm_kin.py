@@ -291,7 +291,7 @@ def suction_face(center, size, H, roof):
 def pick_waypoints(face, size, top_z, tgt_aabb, col_front, wall_front, H, cup_r, pitch, belt_y, belt_top, pedestal):
     """Tool-tip poses (point, axis) for one pick. pitch=True tilts the tool up to 25 deg for high suction points so
     the wrist and forearm stay under the roof; the box is pulled only until it clears its own column, lowered while
-    still tilted, levelled, carried over the belt and put down."""
+    still tilted and carried over the belt and put down with the same tilt (box level); the tool levels after release."""
     d, w, h = size
     theta = math.radians(float(np.clip((face[2] - (H - 0.42)) / 0.12 * 25.0, 0.0, 25.0))) if pitch else 0.0
     a_pick = np.array([math.cos(theta), 0.0, math.sin(theta)])
@@ -310,10 +310,12 @@ def pick_waypoints(face, size, top_z, tgt_aabb, col_front, wall_front, H, cup_r,
         ("slide", f - np.array([slide, 0, 0]), a_pick),
         ("lift", f - np.array([slide, 0, -lift]), a_pick),
         ("pull", np.array([x_clear, f[1], f[2] + lift]), a_pick),
+        # the grip is rigid: the tool keeps the pitch it picked with until the box is released, so the box stays
+        # level all the way to the belt (levelling the tool earlier tilts the box by the same angle)
         ("lower", np.array([x_clear, f[1], carry_z]), a_pick),
-        ("clear", np.array([tool_x, f[1], carry_z]), x_),
-        ("over", np.array([tool_x, belt_y, carry_z]), x_),
-        ("place", place, x_),
-        ("back", place - np.array([0.10, 0, 0]), x_),
+        ("clear", np.array([tool_x, f[1], carry_z]), a_pick),
+        ("over", np.array([tool_x, belt_y, carry_z]), a_pick),
+        ("place", place, a_pick),
+        ("back", place - np.array([0.10, 0, 0]), a_pick),
         ("up", place + np.array([-0.10, 0, 0.30]), x_),
     ])
