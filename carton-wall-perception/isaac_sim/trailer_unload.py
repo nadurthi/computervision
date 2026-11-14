@@ -32,8 +32,8 @@ ap.add_argument("--gui", action="store_true")
 ap.add_argument("--seed", type=int, default=3)
 ap.add_argument("--picks", type=int, default=4, help="boxes to unload (0 = all reachable)")
 ap.add_argument("--rows", type=int, default=2)
-ap.add_argument("--friction", type=float, nargs=2, default=[0.6, 0.5], help="box static / dynamic friction")
-ap.add_argument("--density", type=float, default=90.0, help="kg/m^3 of a filled carton (mass clipped to 1-7 kg)")
+ap.add_argument("--friction", type=float, nargs=2, default=[0.5, 0.4], help="box static / dynamic friction")
+ap.add_argument("--density", type=float, default=60.0, help="kg/m^3 of a filled carton (mass clipped to 1-5 kg)")
 ap.add_argument("--belt-speed", type=float, default=0.5, help="conveyor speed (m/s), towards the door")
 ap.add_argument("--speed", type=float, default=0.35, help="tool speed (m/s)")
 ap.add_argument("--tool-len", type=float, default=0.10, help="suction cup length beyond the flange face (m)")
@@ -119,7 +119,7 @@ def build_boxes(stage):
         # physics: one rigid body, an exact box collider (invisible), cardboard friction
         prim = top.GetPrim()
         UsdPhysics.RigidBodyAPI.Apply(prim)
-        mass = float(np.clip(args.density * d * w * h, 1.0, 7.0))
+        mass = float(np.clip(args.density * d * w * h, 1.0, 5.0))
         UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(mass)
         pr = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
         pr.CreateSolverPositionIterationCountAttr(16)
@@ -313,9 +313,10 @@ class Fanuc:
         p, a, ee_p, _ = self.tool()
         v = v_ff + 4.0 * (p_des - p)
         n = np.linalg.norm(v)
-        if n > 1.5 * args.speed:
-            v *= 1.5 * args.speed / n
-        w = 3.0 * np.cross(a, a_des)
+        vmax = 1.5 * args.speed * (0.6 if self.held else 1.0)
+        if n > vmax:
+            v *= vmax / n
+        w = 6.0 * np.cross(a, a_des)
         J = self.jacobian(p, ee_p)
         lam = 0.03
         dq = J.T @ np.linalg.solve(J @ J.T + lam * lam * np.eye(6), np.concatenate([v, w])) * DT
@@ -501,7 +502,7 @@ def main():
         """Straight-line tool motion at args.speed; False on collision stop or if the target is not reached."""
         p, _, _, _ = robot.tool()
         dist = np.linalg.norm(target - p)
-        n_line = max(1, int(dist / (args.speed * DT)))
+        n_line = max(1, int(dist / (args.speed * (0.6 if robot.held else 1.0) * DT)))
         for k in range(int(timeout / DT)):
             s = min(1.0, (k + 1) / n_line)
             p_des = p + s * (target - p)
@@ -541,7 +542,7 @@ def main():
             p, _ = box_pose(plan[i]["prim"])
             d, w, h = plan[i]["size_m"]
             face = np.array([p[0] - d / 2, p[1], p[2] + h / 2])      # front-face centre (box origin = bottom centre)
-            if np.linalg.norm(face - np.array([robot.tool_off, 0, 0]) - shoulder) < REACH - 0.05:
+            if np.linalg.norm(face - np.array([robot.tool_off, 0, 0]) - shoulder) < REACH - 0.15:
                 reach.append((face[2] + h / 2, -abs(face[1] - base_xy[1]), i, face))
             else:
                 EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
