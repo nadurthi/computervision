@@ -948,13 +948,13 @@ def main():
     log(f"{picks} boxes picked, {len(out_boxes)} carried out of the trailer by the conveyor")
 
     if args.collision_test and not robot.stopped:
-        log("collision test: driving the tool towards the left trailer wall")
+        log("collision test: driving the tool sideways into the trailer wall (-y)")
         move(home, timeout=10.0)
         if args.robot == "fanuc":
             start = np.array([base_xy[0] + 0.25, base_xy[1] - 0.45, args.pedestal + 0.25])
             move(start, a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
             move(np.array([start[0], -tc.W / 2 - 0.2, start[2]]), a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
-        else:                                       # tool still pointing at the wall, sideways into the left wall
+        else:                                       # tool still pointing at the wall, sideways into the right-hand (-y) wall
             move(np.array([home[0], -tc.W / 2 - 0.2, home[2]]), timeout=12.0)
         for _ in range(60):                                            # show that it stays stopped
             sim.step(robot)
