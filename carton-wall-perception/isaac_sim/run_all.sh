@@ -103,7 +103,8 @@ want lidar_test && STEP_TIMEOUT=10m isaac lidar_test lidar_test.py --out /out/li
 want box_wall     && isaac box_wall box_wall_capture.py --frames "$FRAMES" --out /out/box_wall --box-usd-dir /simready ${EXTRA_ARGS:-}
 want unload_cell  && isaac unload_cell unload_cell.py --simready /simready --picks "$PICKS" --record /out/unload_cell ${EXTRA_ARGS:-}
 want trailer_wall && isaac trailer_wall trailer_wall.py --out /out/trailer_wall --box-usd-dir /simready ${TRAILER_ARGS:-}
-# ---- 4) trailer unloading with physics: FANUC CRX-10iA/L, suction, friction, conveyor out of the door
+# ---- 4) trailer unloading with physics: KUKA KR210 (UNLOAD_ARGS='--robot fanuc' for the CRX-10iA/L), suction,
+#         left/right/bottom gripper stoppers, friction, conveyor out of the door
 want trailer_unload && isaac trailer_unload trailer_unload.py --simready /simready --out /out/trailer_unload \
   --picks "${UNLOAD_PICKS:-4}" --collision-test ${UNLOAD_ARGS:-}
 

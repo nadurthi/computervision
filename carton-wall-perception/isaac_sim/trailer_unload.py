@@ -1,5 +1,6 @@
-"""Trailer unloading with physics: a FANUC CRX-10iA/L with a suction tool pulls cartons off a wall packed floor to
-ceiling against the trailer's back wall and puts them on a conveyor that carries them out of the trailer.
+"""Trailer unloading with physics: a KUKA KR210 R2700 (L150) -- or, with --robot fanuc, a FANUC CRX-10iA/L -- with a
+suction tool pulls cartons off a wall packed floor to ceiling against the trailer's back wall and puts them on a
+conveyor that carries them out of the trailer.
 
   * Physics on: every carton is a rigid body with an exact box collider and box-on-box friction, so pulling one
     out drags the box under it and its neighbours a little (the script measures and logs how far).
@@ -11,6 +12,11 @@ ceiling against the trailer's back wall and puts them on a conveyor that carries
     effector touches the trailer (walls, roof, floor, posts, rails), motion stops at once and the contact is
     logged. --collision-test drives the tool into the side wall at the end to show it.
   * Suction is a fixed joint between the tool flange and the box, created on contact and removed on release.
+  * Gripper stoppers (--stoppers, on by default): before a pull the gripper extends three thin plates -- left, right
+    and bottom -- just in front of the neighbouring boxes beside and under the chosen one, so friction cannot drag
+    those out with it. They are kinematic bodies (immovable), retracted once the box is clear of the wall.
+  * The robot starts in a collision-free pose found by forward kinematics on the asset's USD joints (the KR210's
+    zero pose would reach into the wall).
 
     python download_simready_assets.py --out ~/simready --all-cartons
     ./python.sh trailer_unload.py --simready ~/simready --picks 4 --collision-test --out unload_out
@@ -33,14 +39,16 @@ ap.add_argument("--seed", type=int, default=3)
 ap.add_argument("--picks", type=int, default=4, help="boxes to unload (0 = all reachable)")
 ap.add_argument("--rows", type=int, default=2)
 ap.add_argument("--friction", type=float, nargs=2, default=[0.5, 0.4], help="box static / dynamic friction")
-ap.add_argument("--density", type=float, default=60.0, help="kg/m^3 of a filled carton (mass clipped to 1-5 kg)")
+ap.add_argument("--robot", default="kuka", choices=["kuka", "fanuc"], help="KUKA KR210 L150 or FANUC CRX-10iA/L")
+ap.add_argument("--stoppers", type=int, default=1, help="1: gripper extends left/right/bottom stoppers during a pull")
+ap.add_argument("--density", type=float, default=60.0, help="kg/m^3 of a filled carton (mass clipped per robot)")
 ap.add_argument("--belt-speed", type=float, default=0.5, help="conveyor speed (m/s), towards the door")
 ap.add_argument("--speed", type=float, default=0.35, help="tool speed (m/s)")
-ap.add_argument("--tool-len", type=float, default=0.10, help="suction cup length beyond the flange face (m)")
+ap.add_argument("--tool-len", type=float, default=None, help="suction cup length beyond the flange face (m)")
 ap.add_argument("--tool-axis", default="auto", choices=["auto", "x", "y", "z", "-x", "-y", "-z"],
                 help="end-effector link axis the suction tool points along (auto: away from the wrist)")
-ap.add_argument("--pedestal", type=float, default=1.30, help="robot pedestal height (m): shoulder near the top rows")
-ap.add_argument("--standoff", type=float, default=0.62, help="robot base distance from the wall face (m)")
+ap.add_argument("--pedestal", type=float, default=None, help="robot pedestal height (m) (default per robot)")
+ap.add_argument("--standoff", type=float, default=None, help="robot base distance from the wall face (m)")
 ap.add_argument("--collision-test", action="store_true", help="at the end, drive the tool into the side wall")
 ap.add_argument("--frame-every", type=int, default=10, help="physics steps between saved frames (120 Hz)")
 ap.add_argument("--res", type=int, nargs=2, default=[1280, 720])
@@ -70,12 +78,31 @@ import trailer_common as tc                                           # noqa: E4
 
 rng = np.random.default_rng(args.seed)
 DT = 1.0 / 120.0
-FANUC = ["/Isaac/Robots/Fanuc/CRX10IAL/crx10ial.usd", "/Isaac/Robots/FANUC/CRX10IAL/crx10ial.usd"]
-REACH = 1.40                                         # CRX-10iA/L reach 1418 mm
-BELT_Y, BELT_W, BELT_TOP = 0.70, 0.55, 0.90          # conveyor beside the robot, along the right-hand wall
+# Per robot: asset, pedestal/plinth, distance to the wall, shoulder geometry for the reach check (wrist centre within
+# `reach` of the shoulder, which sits sh_r in front of the base axis at height sh_z), roof margin of the suction point,
+# max carton mass, conveyor position (beside the robot, along the right-hand wall).
+ROBOTS = {
+    "kuka": dict(name="KUKA KR210 R2700 (KR210 L150)",
+                 usd=["/Isaac/Robots/Kuka/KR210_L150/kr210_l150.usd", "/Isaac/Robots/KUKA/KR210_L150/kr210_l150.usd"],
+                 search=["/Isaac/Robots/Kuka", "/Isaac/Robots/KUKA"], key="kr210",
+                 pedestal=0.30, plinth=0.90, standoff=1.85, tool_len=0.15, sh_z=0.675, sh_r=0.35, wrist=0.215,
+                 reach=2.20,            # A2-A5 = 1.15 + 1.22 m, minus a margin
+                 roof=0.28, mass_max=15.0, belt_y=0.88, belt_w=0.45, start_search=True),
+    "fanuc": dict(name="FANUC CRX-10iA/L",
+                  usd=["/Isaac/Robots/Fanuc/CRX10IAL/crx10ial.usd", "/Isaac/Robots/FANUC/CRX10IAL/crx10ial.usd"],
+                  search=["/Isaac/Robots/Fanuc"], key="crx10",
+                  pedestal=1.30, plinth=0.45, standoff=0.62, tool_len=0.10, sh_z=0.245, sh_r=0.0, wrist=0.0,
+                  reach=1.28,           # 1418 mm reach minus a margin
+                  roof=0.22, mass_max=5.0, belt_y=0.70, belt_w=0.55, start_search=False),
+}
+SPEC = ROBOTS[args.robot]
+for k in ("pedestal", "standoff", "tool_len"):
+    if getattr(args, k) is None:
+        setattr(args, k, SPEC[k])
+BELT_Y, BELT_W, BELT_TOP = SPEC["belt_y"], SPEC["belt_w"], 0.90
 BELT_X_OUT = -2.5                                    # belt end, outside the trailer (dock side)
 AXES = {"x": [1, 0, 0], "y": [0, 1, 0], "z": [0, 0, 1], "-x": [-1, 0, 0], "-y": [0, -1, 0], "-z": [0, 0, -1]}
-EVENTS = {"picks": [], "collisions": [], "skipped": []}
+EVENTS = {"robot": SPEC["name"], "stoppers": bool(args.stoppers), "picks": [], "collisions": [], "skipped": []}
 
 
 def log(*a):
@@ -119,7 +146,7 @@ def build_boxes(stage):
         # physics: one rigid body, an exact box collider (invisible), cardboard friction
         prim = top.GetPrim()
         UsdPhysics.RigidBodyAPI.Apply(prim)
-        mass = float(np.clip(args.density * d * w * h, 1.0, 5.0))
+        mass = float(np.clip(args.density * d * w * h, 1.0, SPEC["mass_max"]))
         UsdPhysics.MassAPI.Apply(prim).CreateMassAttr(mass)
         pr = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
         pr.CreateSolverPositionIterationCountAttr(16)
@@ -205,17 +232,281 @@ class Conveyor:
         self.sv.GetSurfaceVelocityAttr().Set(Gf.Vec3f(-v, 0.0, 0.0))
 
 
-class Fanuc:
-    """CRX-10iA/L on a pedestal, Cartesian resolved-rate control of the suction tool, contact-based stop."""
+def resolve_robot_url():
+    """First listed asset path that exists on the asset server, else a search of the vendor folders."""
+    assets = get_assets_root_path() or ""
+    try:
+        import omni.client
+    except ImportError:
+        return assets + SPEC["usd"][0]
+    for p in SPEC["usd"]:
+        r, _ = omni.client.stat(assets + p)
+        if r == omni.client.Result.OK:
+            return assets + p
+    found = []
+    def walk(url, depth):
+        r, entries = omni.client.list(url)
+        if r != omni.client.Result.OK:
+            return
+        for e in entries:
+            u = url.rstrip("/") + "/" + e.relative_path
+            if e.relative_path.lower().endswith((".usd", ".usda")) and SPEC["key"] in e.relative_path.lower():
+                found.append(u)
+            elif depth > 0 and "." not in e.relative_path:
+                walk(u, depth - 1)
+    for d in SPEC["search"]:
+        walk(assets + d, 2)
+    log(f"robot asset not at the listed paths; search found {found}")
+    if not found:
+        raise RuntimeError(f"no {SPEC['name']} asset under {assets}{SPEC['search']}")
+    return sorted(found, key=len)[0]
 
-    def __init__(self, stage, base_xy):
-        assets = get_assets_root_path() or ""
-        url = next((assets + p for p in FANUC if assets), None)
+
+def _gf_np(m):
+    return np.array([[m[i][j] for j in range(4)] for i in range(4)], float).T     # Gf row-vector -> column
+
+
+def _T(pos, rot):
+    M = np.eye(4)
+    M[:3, :3] = quat_to_R([rot.GetReal(), *rot.GetImaginary()])
+    M[:3, 3] = [float(v) for v in pos]
+    return M
+
+
+def _rot(axis, ang):
+    c, s_ = math.cos(ang), math.sin(ang)
+    M = np.eye(4)
+    j, k = {"X": (1, 2), "Y": (2, 0), "Z": (0, 1)}[axis]
+    M[j, j], M[j, k], M[k, j], M[k, k] = c, -s_, s_, c
+    return M
+
+
+class ChainFK:
+    """Forward kinematics straight from the asset's USD joints (body0 * frame0 * R(axis, q) * frame1^-1), used to
+    find a start pose before physics runs (no box is ever touched while searching)."""
+
+    def __init__(self, stage, root):
+        xc = UsdGeom.XformCache()
+        js = []
+        for p in Usd.PrimRange(stage.GetPrimAtPath(root)):
+            if not p.IsA(UsdPhysics.Joint):
+                continue
+            j = UsdPhysics.Joint(p)
+            b0 = [str(t) for t in j.GetBody0Rel().GetTargets()]
+            b1 = [str(t) for t in j.GetBody1Rel().GetTargets()]
+            ex = j.GetExcludeFromArticulationAttr().Get()
+            if not b1 or ex:
+                continue
+            rev = p.IsA(UsdPhysics.RevoluteJoint)
+            rj = UsdPhysics.RevoluteJoint(p) if rev else None
+            js.append(dict(name=p.GetName(), prim=p, b0=b0[0] if b0 else None, b1=b1[0], rev=rev,
+                           axis=str(rj.GetAxisAttr().Get()) if rev else None,
+                           lo=rj.GetLowerLimitAttr().Get() if rev else None,
+                           hi=rj.GetUpperLimitAttr().Get() if rev else None,
+                           F0=_T(j.GetLocalPos0Attr().Get() or (0, 0, 0), j.GetLocalRot0Attr().Get() or Gf.Quatf(1)),
+                           F1=_T(j.GetLocalPos1Attr().Get() or (0, 0, 0), j.GetLocalRot1Attr().Get() or Gf.Quatf(1))))
+        bodies = {j["b1"] for j in js} | {j["b0"] for j in js if j["b0"]}
+        self.W0 = {b: _gf_np(xc.GetLocalToWorldTransform(stage.GetPrimAtPath(b))) for b in bodies}
+        self.roots = bodies - {j["b1"] for j in js if j["b0"]}
+        order, known = [], set(self.roots)                # topological order: base outwards
+        rest = [j for j in js if j["b0"]]
+        while rest:
+            nxt = [j for j in rest if j["b0"] in known]
+            if not nxt:
+                break
+            for j in nxt:
+                order.append(j); known.add(j["b1"]); rest.remove(j)
+        self.joints = order
+        self.rev = [j for j in order if j["rev"]]
+        self.bodies = [j["b1"] for j in order]
+        self.sign = 1.0
+
+    def fk(self, q):                                       # q: {joint name: rad}
+        W = {b: self.W0[b] for b in self.roots}
+        for j in self.joints:
+            a = self.sign * q.get(j["name"], 0.0) if j["rev"] else 0.0
+            R = _rot(j["axis"], a) if j["rev"] else np.eye(4)
+            W[j["b1"]] = W[j["b0"]] @ j["F0"] @ R @ np.linalg.inv(j["F1"])
+        return W
+
+    def zero_error(self):
+        W = self.fk({})
+        return max((np.linalg.norm(W[b][:3, 3] - self.W0[b][:3, 3]) for b in self.bodies), default=0.0)
+
+    def tool_axis(self, ee):
+        """Axis of the end-effector frame pointing away from the wrist (zero pose), as in Robot.setup."""
+        W = self.W0
+        p_ee = W[ee][:3, 3]
+        for b in reversed(self.bodies):
+            if b == ee:
+                continue
+            v = W[ee][:3, :3].T @ (p_ee - W[b][:3, 3])
+            if np.linalg.norm(v) > 0.03:
+                v = v / np.linalg.norm(v)
+                k = int(np.argmax(np.abs(v)))
+                e = np.zeros(3); e[k] = np.sign(v[k])
+                return e
+        return np.array([0.0, 0.0, 1.0])
+
+    def search(self, ee, tip_len, home, front, step_deg=10.0):
+        """Grid over joints 2, 3, 5 (1, 4, 6 at zero): the pose whose tool tip is nearest `home` with the tool along
+        +x, keeping every link origin (and the midpoints between them) clear of the roof, side walls and the wall."""
+        ax = self.tool_axis(ee)
+        if len(self.rev) < 5:
+            return None, None
+        vary = [self.rev[1], self.rev[2], self.rev[4]]
+        grids = []
+        for j in vary:
+            lo = j["lo"] if j["lo"] is not None and j["lo"] > -1e3 else -180.0
+            hi = j["hi"] if j["hi"] is not None and j["hi"] < 1e3 else 180.0
+            grids.append(np.radians(np.arange(lo + 2, hi - 2 + 1e-6, step_deg)))
+        best = (1e9, None, None)
+        moving = self.bodies[1:]
+        for a in grids[0]:
+            for b in grids[1]:
+                for c in grids[2]:
+                    q = {vary[0]["name"]: a, vary[1]["name"]: b, vary[2]["name"]: c}
+                    W = self.fk(q)
+                    pts = [W[k][:3, 3] for k in moving]
+                    pts += [(u + v) / 2 for u, v in zip(pts[:-1], pts[1:])]
+                    P = np.array(pts)
+                    R = W[ee][:3, :3]
+                    a_w = R @ ax
+                    tip = W[ee][:3, 3] + a_w * tip_len
+                    if (P[:, 2].max() > tc.H - 0.40 or P[:, 2].min() < 0.15 or np.abs(P[:, 1]).max() > tc.W / 2 - 0.35
+                            or P[:, 0].max() > front - 0.40 or tip[0] > front - 0.15 or tip[2] > tc.H - 0.40):
+                        continue
+                    cost = np.linalg.norm(tip - home) + 0.5 * (1 - a_w[0])
+                    if cost < best[0]:
+                        best = (cost, q, tip)
+        return best[1], best[2]
+
+    def apply_initial(self, q):
+        """Start the articulation in q: joint state and drive target on every revolute joint (degrees)."""
+        for j in self.rev:
+            deg = float(np.degrees(self.sign * q.get(j["name"], 0.0)))
+            try:
+                PhysxSchema.JointStateAPI.Apply(j["prim"], "angular").CreatePositionAttr(deg)
+            except Exception as e:
+                log("joint state:", e)
+            drv = UsdPhysics.DriveAPI.Get(j["prim"], "angular")
+            if drv and drv.GetTargetPositionAttr():
+                drv.GetTargetPositionAttr().Set(deg)
+
+
+class Stoppers:
+    """Three extendable stoppers on the gripper (left, right, bottom): thin kinematic plates that, during a pull,
+    sit ~3 mm in front of the neighbouring boxes beside and under the chosen box, so friction from the box being
+    pulled cannot drag them out. Created once at build time (no prims are added during the simulation), parked
+    below the floor when retracted."""
+    GAP, T = 0.003, 0.02                                 # clearance to the neighbour face; plate thickness (x)
+    SIZES = {"left": (0.02, 0.08, 0.20), "right": (0.02, 0.08, 0.20), "bottom": (0.02, 0.20, 0.06)}
+
+    def __init__(self, stage, park_xy):
+        mat = tc.material(stage, "/World/Looks/Stopper", (0.95, 0.80, 0.05), 0.4, 0.5)
+        pm = tc.physics_material(stage, "/World/Physics/Stopper", 0.15, 0.1)
+        UsdGeom.Xform.Define(stage, "/World/Gripper")
+        self.park = {}
+        self.ops, self.paths, self.pos = {}, {}, {}
+        for k, (sx, sy, sz) in self.SIZES.items():
+            p = f"/World/Gripper/Stop_{k}"
+            park = np.array([park_xy[0], park_xy[1] + {"left": 0.3, "right": -0.3, "bottom": 0.0}[k], -2.0])
+            c = tc.cube(stage, p, park, (sx, sy, sz), mat, "gripper_stopper", collide=True, phys_mat=pm)
+            prim = c.GetPrim()
+            UsdPhysics.RigidBodyAPI.Apply(prim).CreateKinematicEnabledAttr(True)
+            pc = PhysxSchema.PhysxCollisionAPI.Apply(prim)
+            pc.CreateContactOffsetAttr(0.002); pc.CreateRestOffsetAttr(0.0)
+            PhysxSchema.PhysxContactReportAPI.Apply(prim).CreateThresholdAttr(0.0)
+            self.ops[k] = UsdGeom.Xformable(c).GetOrderedXformOps()[0]
+            self.paths[k], self.park[k], self.pos[k] = p, park, park.copy()
+        self.touch = set()
+
+    def filter_robot(self, stage, link_paths):
+        for p in self.paths.values():
+            fp = UsdPhysics.FilteredPairsAPI.Apply(stage.GetPrimAtPath(p))
+            for lp in link_paths:
+                fp.CreateFilteredPairsRel().AddTarget(lp)
+
+    def _set(self, k, p):
+        self.pos[k] = np.asarray(p, float)
+        self.ops[k].Set(Gf.Vec3d(*map(float, p)))
+
+    def plan(self, target, others, H_roof):
+        """Stopper poses for pulling `target` (dict with 'lo','hi' world AABB), `others` = AABBs of the rest of the
+        wall. A stopper is only deployed if there is a neighbour in its region."""
+        lo, hi = target["lo"], target["hi"]
+        zc = float(np.clip((lo[2] + hi[2]) / 2, lo[2] + 0.11, hi[2] - 0.11)) if hi[2] - lo[2] > 0.22 else \
+            (lo[2] + hi[2]) / 2
+        yc = (lo[1] + hi[1]) / 2
+        out = {}
+        regions = {"left": ((hi[1] + 0.004, hi[1] + 0.084), (zc - 0.10, zc + 0.10)),
+                   "right": ((lo[1] - 0.084, lo[1] - 0.004), (zc - 0.10, zc + 0.10)),
+                   "bottom": ((yc - 0.10, yc + 0.10), (lo[2] - 0.064, lo[2] - 0.004))}
+        for k, ((y0, y1), (z0, z1)) in regions.items():
+            if z0 < 0.01 or abs(y0) > tc.W / 2 - 0.01 or abs(y1) > tc.W / 2 - 0.01:
+                continue
+            sy, sz = self.SIZES[k][1] / 2, self.SIZES[k][2] / 2
+            yc_, zc_ = (y0 + y1) / 2, (z0 + z1) / 2
+            hit = [o for o in others                      # every box the plate's footprint overlaps at all
+                   if min(yc_ + sy, o["hi"][1]) - max(yc_ - sy, o["lo"][1]) > 0
+                   and min(zc_ + sz, o["hi"][2]) - max(zc_ - sz, o["lo"][2]) > 0]
+            if not hit:
+                continue
+            out[k] = (np.array([min(o["lo"][0] for o in hit) - self.GAP - self.T / 2, yc_, zc_]),
+                      [o["name"] for o in hit])
+        return out
+
+    def extend(self, poses, sim, robot, steps=25, travel=0.05):
+        """Pop out 5 cm short of the neighbour faces, then glide in (no impact)."""
+        for k, (p, _) in poses.items():
+            self._set(k, p - np.array([travel, 0, 0]))
+        sim.step(robot)
+        for s in range(1, steps + 1):
+            e = 0.5 - 0.5 * math.cos(math.pi * s / steps)
+            for k, (p, _) in poses.items():
+                self._set(k, p - np.array([travel * (1 - e), 0, 0]))
+            robot.hold_cmd()
+            sim.step(robot)
+
+    def retract(self):
+        for k in self.paths:
+            self._set(k, self.park[k])
+
+    def contacts(self, pairs):
+        for a0, c0, a1, c1 in pairs:
+            for a, o in ((a0, a1), (a1, a0)):
+                if a.startswith("/World/Gripper/") and o.startswith("/World/Boxes/"):
+                    self.touch.add((a.split("_")[-1], o.split("/")[3]))
+
+
+def read_contacts():
+    headers, _ = get_physx_simulation_interface().get_contact_report()
+    out = []
+    for h in headers:
+        out.append((str(PhysicsSchemaTools.intToSdfPath(h.actor0)), str(PhysicsSchemaTools.intToSdfPath(h.collider0)),
+                    str(PhysicsSchemaTools.intToSdfPath(h.actor1)), str(PhysicsSchemaTools.intToSdfPath(h.collider1))))
+    return out
+
+
+def box_aabb(path, size):
+    p, q = box_pose(path)
+    R = quat_to_R(q)
+    d, w, h = size
+    P = np.array([p + R @ np.array([sx * d / 2, sy * w / 2, z]) for sx in (-1, 1) for sy in (-1, 1) for z in (0, h)])
+    return {"lo": P.min(0), "hi": P.max(0), "name": path.split("/")[-1]}
+
+
+class Robot:
+    """Industrial arm on a plinth, Cartesian resolved-rate control of the suction tool, contact-based stop."""
+
+    def __init__(self, stage, base_xy, home=None, front=None):
+        url = resolve_robot_url()
         self.stage = stage
         self.base = np.array([base_xy[0], base_xy[1], args.pedestal])
-        steel = tc.material(stage, "/World/Looks/Pedestal", (0.95, 0.75, 0.10), 0.5, 0.3)
-        tc.cube(stage, "/World/Cell/Pedestal", (base_xy[0], base_xy[1], args.pedestal / 2),
-                (0.45, 0.45, args.pedestal), steel, "robot_base", collide=True)
+        if args.pedestal > 0.005:
+            steel = tc.material(stage, "/World/Looks/Pedestal", (0.95, 0.75, 0.10), 0.5, 0.3)
+            tc.cube(stage, "/World/Cell/Pedestal", (base_xy[0], base_xy[1], args.pedestal / 2),
+                    (SPEC["plinth"], SPEC["plinth"], args.pedestal), steel, "robot_base", collide=True)
         wrap = UsdGeom.Xform.Define(stage, "/World/Robot")
         UsdGeom.Xformable(wrap).AddTranslateOp().Set(Gf.Vec3d(*self.base))
         stage.GetPrimAtPath("/World/Robot").GetReferences().AddReference(url)
@@ -232,15 +523,46 @@ class Fanuc:
             n_col += p.HasAPI(UsdPhysics.CollisionAPI)
         self.link_paths = [str(p.GetPath()) for p in self.links]
         self.art_path = str(art_root.GetPath())
-        log(f"robot {url}: articulation {self.art_path}, {len(self.links)} links, {n_col} collision shapes")
+        log(f"robot {SPEC['name']} {url}: articulation {self.art_path}, {len(self.links)} links, "
+            f"{n_col} collision shapes, base at {np.round(self.base, 2).tolist()}")
         self.stopped = None
         self.held = None
         self.box_touch = set()
         self.q_cmd = None
+        self.q0 = None
+        self.fk = None
+        self.home_target, self.front = home, front
+        if SPEC["start_search"] and home is not None:
+            self.find_start(home, front)
+
+    def _ee_guess(self, bodies):
+        pick = [b for b in bodies if any(k in b.split("/")[-1].lower() for k in ("flange", "tool0", "link_6", "link6", "j6"))]
+        return pick[-1] if pick else bodies[-1]
+
+    def find_start(self, home, front):
+        try:
+            self.fk = ChainFK(self.stage, "/World/Robot")
+            ee = self._ee_guess(self.fk.bodies)
+            log(f"FK: {len(self.fk.rev)} revolute joints {[j['name'] for j in self.fk.rev]}, zero-pose check "
+                f"{100 * self.fk.zero_error():.2f} cm, end effector {ee.split('/')[-1]}")
+            q, tip = self.fk.search(ee, args.tool_len + 0.05, home, front)
+            if q is None:
+                log("FK: no collision-free start pose found; starting from the asset's zero pose")
+                return
+            self.q0, self.fk_ee = q, ee
+            log(f"start pose {[(k, round(math.degrees(v))) for k, v in q.items()]} deg -> tool tip "
+                f"{np.round(tip, 2).tolist()} (home {np.round(home, 2).tolist()})")
+            self.fk.apply_initial(q)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            log("FK start-pose search failed:", e)
 
     def setup(self, world):
-        self.art = world.scene.add(SingleArticulation(self.art_path, name="fanuc"))
+        self.art = world.scene.add(SingleArticulation(self.art_path, name=args.robot))
         world.reset()
+        if self.q0 is not None:
+            self._apply_start(world)
         self.view = self.art._articulation_view
         names = list(self.view.body_names)
         pick = [n for n in names if any(k in n.lower() for k in ("flange", "tool0", "link_6", "link6", "j6"))]
@@ -284,13 +606,50 @@ class Fanuc:
         log(f"tool axis {name} of {self.ee_name}; flange face {100 * face:.1f} cm, suction tip "
             f"{100 * self.tool_off:.1f} cm from the link origin")
         cup = UsdGeom.Cylinder.Define(self.stage, self.ee_path + "/suction_cup")
-        cup.CreateRadiusAttr(0.04); cup.CreateHeightAttr(args.tool_len)
+        cup.CreateRadiusAttr(0.05 if args.robot == 'kuka' else 0.04); cup.CreateHeightAttr(args.tool_len)
         cup.CreateAxisAttr(name[-1].upper())
         UsdGeom.Xformable(cup).AddTranslateOp().Set(Gf.Vec3d(*(self.axis_local * (face + args.tool_len / 2))))
         UsdPhysics.CollisionAPI.Apply(cup.GetPrim())        # the cup is a collision shape of the end-effector body
         self.cup_path = self.ee_path + "/suction_cup"
         world.reset()                                       # re-parse physics so the cup collider is included
+        if self.q0 is not None:
+            self.art.set_joint_positions(self.q0_vec)
+            self.art.apply_action(ArticulationAction(joint_positions=self.q0_vec))
         self.q_cmd = np.asarray(self.art.get_joint_positions(), float)
+        log(f"tool tip at start {np.round(self.tool()[0], 3).tolist()}, axis {np.round(self.tool()[1], 2).tolist()}")
+
+    def _apply_start(self, world):
+        """Put the articulation in the searched start pose; if the measured end-effector position disagrees with
+        the FK prediction, the joint sign convention is the other one: flip it and search again."""
+        names = list(self.art.dof_names)
+        def vec(q):
+            v = np.asarray(self.art.get_joint_positions(), float).copy()
+            for i, n in enumerate(names):
+                if n in q:
+                    v[i] = self.fk.sign * q[n]
+            return v
+        for attempt in range(2):
+            v = vec(self.q0)
+            self.art.set_joints_default_state(positions=v)
+            self.art.set_joint_positions(v)
+            self.art.apply_action(ArticulationAction(joint_positions=v))
+            world.step(render=False)
+            p_meas = np.asarray(SingleXFormPrim(self.fk_ee).get_world_pose()[0], float)
+            qa = {n: float(x) * self.fk.sign for n, x in zip(names, self.art.get_joint_positions())}
+            p_fk = self.fk.fk(qa)[self.fk_ee][:3, 3]
+            err = np.linalg.norm(p_meas - p_fk)
+            log(f"start pose applied: end effector at {np.round(p_meas, 3).tolist()}, FK {np.round(p_fk, 3).tolist()} "
+                f"({100 * err:.1f} cm)")
+            if err < 0.05 or attempt == 1:
+                break
+            self.fk.sign = -self.fk.sign
+            log("FK: joint sign flipped, searching again")
+            q, tip = self.fk.search(self.fk_ee, args.tool_len + 0.05, self.home_target, self.front)
+            if q is None:
+                self.fk.sign = -self.fk.sign
+                break
+            self.q0 = q
+        self.q0_vec = vec(self.q0)
 
     # ---- state
     def tool(self):
@@ -304,15 +663,10 @@ class Fanuc:
         Jl, Ja = J[:3], J[3:]
         return np.vstack([Jl - skew(tool_p - ee_p) @ Ja, Ja])
 
-    def contacts(self):
+    def contacts(self, pairs):
         """Robot-link contacts from the PhysX contact report: returns [(link, other)]."""
-        headers, _ = get_physx_simulation_interface().get_contact_report()
         out = []
-        for h in headers:
-            a0 = str(PhysicsSchemaTools.intToSdfPath(h.actor0))
-            a1 = str(PhysicsSchemaTools.intToSdfPath(h.actor1))
-            c0 = str(PhysicsSchemaTools.intToSdfPath(h.collider0))
-            c1 = str(PhysicsSchemaTools.intToSdfPath(h.collider1))
+        for a0, c0, a1, c1 in pairs:
             r0, r1 = a0.startswith("/World/Robot"), a1.startswith("/World/Robot")
             if r0 != r1:
                 out.append((a0, c1) if r0 else (a1, c0))
@@ -339,6 +693,9 @@ class Fanuc:
 
     def hold(self):
         self.q_cmd = np.asarray(self.art.get_joint_positions(), float)
+        self.art.apply_action(ArticulationAction(joint_positions=self.q_cmd))
+
+    def hold_cmd(self):                                     # keep the last command (no drift while waiting)
         self.art.apply_action(ArticulationAction(joint_positions=self.q_cmd))
 
     # ---- suction
@@ -406,6 +763,7 @@ class Sim:
         self.stage = omni.usd.get_context().get_stage()
         self.n = 0
         self.frames = 0
+        self.stoppers = None
         os.makedirs(os.path.join(args.out, "frames"), exist_ok=True)
 
     def camera(self, eye, target):
@@ -435,8 +793,11 @@ class Sim:
     def step(self, robot=None):
         self.world.step(render=False)
         self.n += 1
+        pairs = read_contacts() if robot is not None else []
+        if self.stoppers is not None:
+            self.stoppers.contacts(pairs)
         if robot is not None and robot.stopped is None:
-            cs = robot.contacts()
+            cs = robot.contacts(pairs)
             for l, o in cs:
                 if o.startswith("/World/Boxes/") and not (robot.held and o.startswith(robot.held)):
                     robot.box_touch.add((l.split("/")[-1], "/".join(o.split("/")[:4]).split("/")[-1]))
@@ -490,14 +851,26 @@ def main():
     plan = build_boxes(st)
     front = min(b["front_face_x_m"] for b in plan)
     base_xy = (front - args.standoff, 0.0)
-    cam_x = front - 4.6
+    cam_x = front - (4.4 if args.robot == "kuka" else 4.6)
+    if args.robot == "kuka":
+        home = np.array([front - 0.45, base_xy[1], 1.60])
+    else:
+        home = np.array([base_xy[0] + 0.35, base_xy[1], args.pedestal + 0.55])
     tc.build_trailer(st, collide=True, phys_mat=trailer_pm)
     tc.build_lights(st, cam_x)
     conveyor = Conveyor(st, front - 0.30, args.belt_speed)          # stops 30 cm short of the wall: a moving belt
                                                                     # drags anything that touches it, even its end
     conveyor.add_transfer_plate(st, front - 0.04)
-    robot = Fanuc(st, base_xy)
-    sim.camera((cam_x, -0.75, 1.9), (front + 0.2, 0.25, 1.25))
+    robot = Robot(st, base_xy, home, front)
+    stoppers = None
+    if args.stoppers:
+        stoppers = Stoppers(st, (base_xy[0] - 1.0, 0.0))
+        stoppers.filter_robot(st, robot.link_paths)
+        sim.stoppers = stoppers
+    if args.robot == "kuka":
+        sim.camera((cam_x, -1.0, 2.3), (front - 0.2, 0.3, 1.3))
+    else:
+        sim.camera((cam_x, -0.75, 1.9), (front + 0.2, 0.25, 1.25))
     robot.setup(sim.world)
     sim.world.play()
 
@@ -530,8 +903,14 @@ def main():
         log(f"target {np.round(target, 3).tolist()} not reached (error {100 * err:.1f} cm, {ang:.0f} deg)")
         return False
 
-    shoulder = robot.base + np.array([0, 0, 0.245])
-    home = np.array([base_xy[0] + 0.35, base_xy[1], args.pedestal + 0.55])
+    def in_reach(face):
+        """Wrist centre within reach of the shoulder (which turns with joint 1 towards the target)."""
+        wc = face - np.array([robot.tool_off + SPEC["wrist"], 0, 0])
+        dxy = wc[:2] - robot.base[:2]
+        r = max(np.linalg.norm(dxy), 1e-6)
+        sh = robot.base + np.array([0, 0, SPEC["sh_z"]]) + np.r_[dxy / r * SPEC["sh_r"], 0.0]
+        return np.linalg.norm(wc - sh) < SPEC["reach"]
+
     if not move(home, timeout=12.0):
         log("could not reach the home pose; check --tool-axis / --pedestal")
     removed, unreachable, picks = set(), set(), 0
@@ -554,9 +933,9 @@ def main():
             p, _ = box_pose(plan[i]["prim"])
             d, w, h = plan[i]["size_m"]
             # suction point on the front face: its centre, but low enough that the wrist stays 22 cm below the roof
-            gz = max(min(p[2] + h / 2, tc.H - 0.22), p[2] + min(0.06, h / 2))
+            gz = max(min(p[2] + h / 2, tc.H - SPEC["roof"]), p[2] + min(0.06, h / 2))
             face = np.array([p[0] - d / 2, p[1], gz])                # box origin = bottom centre
-            if np.linalg.norm(face - np.array([robot.tool_off, 0, 0]) - shoulder) < REACH - 0.12:
+            if in_reach(face):
                 reach.append((p[2] + h, -abs(face[1] - base_xy[1]), i, face))
             else:
                 EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
@@ -587,6 +966,16 @@ def main():
         robot.grip(b["prim"], compliant=True)
         for _ in range(10):
             sim.step(robot)
+        deployed = {}
+        if stoppers is not None:                            # extend left / right / bottom stoppers
+            tgt = box_aabb(b["prim"], b["size_m"])
+            others = [box_aabb(o["prim"], o["size_m"]) for j, o in enumerate(plan) if j not in removed and j != i]
+            deployed = stoppers.plan(tgt, others, tc.H)
+            stoppers.touch.clear()
+            if deployed:
+                stoppers.extend(deployed, sim, robot)
+            log("  stoppers: " + (", ".join(f"{k} at x={v[0][0]:.3f} in front of {v[1]}" for k, v in deployed.items())
+                                  or "none needed (no neighbour beside or under)"))
         # 1) slide it out by ~40 % of its depth while it still rests on the box below: friction drags the
         #    neighbours a little; 2) lift 1 cm (top boxes have ~1.5 cm to the roof); 3) pull it clear
         slide = min(0.18, 0.4 * d)
@@ -602,6 +991,11 @@ def main():
         after = {k: box_pose(k)[0] for k in before}
         disp = sorted(((100 * np.linalg.norm(after[k] - before[k]), k) for k in before), reverse=True)[:3]
         log("  neighbours dragged: " + ", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in disp))
+        if stoppers is not None and deployed:
+            log(f"  stopper contacts: {sorted(stoppers.touch) or 'none'}")
+        if stoppers is not None:
+            stoppers.retract()
+            sim.step(robot)
         if robot.stopped:                                   # collision: hold the box where it is
             break
         if not pulled:
@@ -630,7 +1024,9 @@ def main():
         conveyor.set_speed(args.belt_speed)
         removed.add(i); picks += 1
         EVENTS["picks"].append({"box": b["prim"], "model": b["model"], "mass_kg": round(b["mass_kg"], 2),
-                                "placed": bool(ok), "neighbours_dragged_cm": [[k, round(c, 2)] for c, k in disp]})
+                                "placed": bool(ok), "neighbours_dragged_cm": [[k, round(c, 2)] for c, k in disp],
+                                "stoppers": {k: v[1] for k, v in deployed.items()},
+                                "stopper_contacts": sorted(stoppers.touch) if stoppers is not None else []})
         if not move(home, timeout=10.0) and robot.stopped:
             break
 
@@ -642,9 +1038,12 @@ def main():
     if args.collision_test and not robot.stopped:
         log("collision test: driving the tool towards the left trailer wall")
         move(home, timeout=10.0)
-        start = np.array([base_xy[0] + 0.25, base_xy[1] - 0.45, args.pedestal + 0.25])
-        move(start, a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
-        move(np.array([start[0], -tc.W / 2 - 0.2, start[2]]), a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
+        if args.robot == "fanuc":
+            start = np.array([base_xy[0] + 0.25, base_xy[1] - 0.45, args.pedestal + 0.25])
+            move(start, a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
+            move(np.array([start[0], -tc.W / 2 - 0.2, start[2]]), a_des=np.array([0.0, -1.0, 0.0]), timeout=10.0)
+        else:                                       # tool still pointing at the wall, sideways into the left wall
+            move(np.array([home[0], -tc.W / 2 - 0.2, home[2]]), timeout=12.0)
         for _ in range(60):                                            # show that it stays stopped
             sim.step(robot)
         if not robot.stopped:

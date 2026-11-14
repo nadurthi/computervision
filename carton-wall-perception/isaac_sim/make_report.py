@@ -293,14 +293,16 @@ def section_unload():
     if os.path.exists(e):
         E = json.load(open(e))
         rows = "".join(f"<tr><td>{p['box'].split('/')[-1]}</td><td>{p['mass_kg']}</td><td>{p['placed']}</td>"
+                       f"<td>{', '.join(p.get('stoppers', {})) or '-'}</td>"
                        f"<td>{', '.join(f'{k.split(chr(47))[-1]} {c} cm' for k, c in p['neighbours_dragged_cm'])}</td></tr>"
                        for p in E.get("picks", []))
         col = "".join(f"<li>{c['link'].split('/')[-1]} touched {c['hit']} at {c['t_s']} s: stopped</li>"
                       for c in E.get("collisions", []))
-        ev = (f"<table><tr><th>box</th><th>kg</th><th>placed</th><th>neighbours dragged</th></tr>{rows}</table>"
+        ev = (f"<table><tr><th>box</th><th>kg</th><th>placed</th><th>stoppers</th><th>neighbours dragged</th></tr>{rows}</table>"
               f"<p>Collisions:</p><ul>{col or '<li>none</li>'}</ul><p>Skipped (out of reach): "
               f"{len(E.get('skipped', []))}</p>")
-    return "<h2>Trailer unloading (FANUC CRX-10iA/L)</h2>" + ev + "<div class='row'>" + "".join(figs) + "</div>"
+    robot = json.load(open(e)).get("robot", "FANUC CRX-10iA/L") if os.path.exists(e) else ""
+    return f"<h2>Trailer unloading ({robot})</h2>" + ev + "<div class='row'>" + "".join(figs) + "</div>"
 
 
 def section_logs():
