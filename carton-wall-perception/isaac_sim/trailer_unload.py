@@ -39,8 +39,8 @@ ap.add_argument("--speed", type=float, default=0.35, help="tool speed (m/s)")
 ap.add_argument("--tool-len", type=float, default=0.10, help="suction cup length beyond the flange face (m)")
 ap.add_argument("--tool-axis", default="auto", choices=["auto", "x", "y", "z", "-x", "-y", "-z"],
                 help="end-effector link axis the suction tool points along (auto: away from the wrist)")
-ap.add_argument("--pedestal", type=float, default=1.05, help="robot pedestal height (m)")
-ap.add_argument("--standoff", type=float, default=0.72, help="robot base distance from the wall face (m)")
+ap.add_argument("--pedestal", type=float, default=1.30, help="robot pedestal height (m): shoulder near the top rows")
+ap.add_argument("--standoff", type=float, default=0.62, help="robot base distance from the wall face (m)")
 ap.add_argument("--collision-test", action="store_true", help="at the end, drive the tool into the side wall")
 ap.add_argument("--frame-every", type=int, default=10, help="physics steps between saved frames (120 Hz)")
 ap.add_argument("--res", type=int, nargs=2, default=[1280, 720])
@@ -519,7 +519,7 @@ def main():
         return False
 
     shoulder = robot.base + np.array([0, 0, 0.245])
-    home = np.array([base_xy[0] + 0.35, base_xy[1], 1.55])
+    home = np.array([base_xy[0] + 0.35, base_xy[1], args.pedestal + 0.55])
     if not move(home, timeout=12.0):
         log("could not reach the home pose; check --tool-axis / --pedestal")
     removed, unreachable, picks = set(), set(), 0
@@ -542,7 +542,7 @@ def main():
             p, _ = box_pose(plan[i]["prim"])
             d, w, h = plan[i]["size_m"]
             face = np.array([p[0] - d / 2, p[1], p[2] + h / 2])      # front-face centre (box origin = bottom centre)
-            if np.linalg.norm(face - np.array([robot.tool_off, 0, 0]) - shoulder) < REACH - 0.15:
+            if np.linalg.norm(face - np.array([robot.tool_off, 0, 0]) - shoulder) < REACH - 0.12:
                 reach.append((face[2] + h / 2, -abs(face[1] - base_xy[1]), i, face))
             else:
                 EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
