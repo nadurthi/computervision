@@ -606,7 +606,8 @@ class Robot:
         log(f"tool axis {name} of {self.ee_name}; flange face {100 * face:.1f} cm, suction tip "
             f"{100 * self.tool_off:.1f} cm from the link origin")
         cup = UsdGeom.Cylinder.Define(self.stage, self.ee_path + "/suction_cup")
-        cup.CreateRadiusAttr(0.05 if args.robot == 'kuka' else 0.04); cup.CreateHeightAttr(args.tool_len)
+        self.cup_r = 0.05 if args.robot == "kuka" else 0.04
+        cup.CreateRadiusAttr(self.cup_r); cup.CreateHeightAttr(args.tool_len)
         cup.CreateAxisAttr(name[-1].upper())
         UsdGeom.Xformable(cup).AddTranslateOp().Set(Gf.Vec3d(*(self.axis_local * (face + args.tool_len / 2))))
         UsdPhysics.CollisionAPI.Apply(cup.GetPrim())        # the cup is a collision shape of the end-effector body
@@ -812,6 +813,11 @@ class Sim:
             self.snap()
 
 
+def EVENTS_PICKED(plan):
+    names = {p["box"] for p in EVENTS["picks"]}
+    return [j for j, o in enumerate(plan) if o["prim"] in names]
+
+
 def box_pose(path):
     p, q = SingleXFormPrim(path).get_world_pose()
     return np.asarray(p, float), np.asarray(q, float)
@@ -949,6 +955,22 @@ def main():
         log(f"pick {picks + 1}: {b['prim']} ({b['model']}, {b['mass_kg']:.1f} kg) top at "
             f"{top_z:.2f} m, suction at {face[2]:.2f} m")
         before = {o["prim"]: box_pose(o["prim"])[0] for j, o in enumerate(plan) if j not in removed and j != i}
+        # boxes touching the chosen one (beside / under / above, within 2 cm): their pull towards the robot is
+        # the drag that the stoppers are meant to prevent
+        tgt0 = box_aabb(b["prim"], b["size_m"])
+        adjacent = []
+        for j, o in enumerate(plan):
+            if j in removed or j == i:
+                continue
+            a = box_aabb(o["prim"], o["size_m"])
+            gap = np.maximum(a["lo"] - tgt0["hi"], tgt0["lo"] - a["hi"])     # per axis, < 0 = overlap
+            if gap[1] < 0.02 and gap[2] < 0.02 and (gap[1] > -0.005 or gap[2] > -0.005) and gap[0] < 0:
+                adjacent.append(o["prim"])
+        # top boxes: pitch the suction tool up (up to 25 deg) so the wrist and forearm stay below the roof
+        theta = math.radians(float(np.clip((face[2] - (tc.H - 0.42)) / 0.12 * 25.0, 0.0, 25.0))) \
+            if args.robot == "kuka" else 0.0
+        a_pick = np.array([math.cos(theta), 0.0, math.sin(theta)])
+        face = face - np.array([robot.cup_r * math.sin(theta), 0, 0])    # lowest rim of the tilted cup touches first
         def phase(name):
             now = {k: box_pose(k)[0] for k in before}
             top = sorted(((100 * np.linalg.norm(now[k] - before[k]), k) for k in before), reverse=True)[:3]
@@ -957,8 +979,10 @@ def main():
             robot.box_touch.clear()
 
         robot.box_touch.clear()
+        if theta > 0:
+            log(f"  tool pitched up {math.degrees(theta):.0f} deg (roof clearance)")
         approach = face - np.array([0.15, 0, 0])
-        if not move(approach) or not move(face - np.array([0.008, 0, 0]), timeout=4.0):
+        if not move(approach, a_pick) or not move(face - np.array([0.008, 0, 0]), a_pick, timeout=4.0):
             if robot.stopped:
                 break
             unreachable.add(i); EVENTS["skipped"].append(b["prim"]); move(home); continue
@@ -980,17 +1004,28 @@ def main():
         #    neighbours a little; 2) lift 1 cm (top boxes have ~1.5 cm to the roof); 3) pull it clear
         slide = min(0.18, 0.4 * d)
         lift = min(0.01, max(0.0, tc.H - top_z - 0.004))
-        pulled = move(face - np.array([slide, 0, 0]), timeout=6.0)
+        pulled = move(face - np.array([slide, 0, 0]), a_pick, timeout=6.0)
         phase("slide (compliant grip)")
         robot.grip(b["prim"], compliant=False)              # rigid from here: lift and carry
         for _ in range(5):
             sim.step(robot)
-        pulled = pulled and move(face - np.array([slide, 0, -lift]), timeout=3.0) and \
-            move(np.array([wall_front - 0.08 - d, face[1], face[2] + lift]), timeout=8.0)   # clear of the whole wall
+        # pull only until the box's back is 3 cm in front of every box in its own column below it (then it can be
+        # lowered straight down): pulling a high box all the way back folds the arm and raises the elbow
+        lo_t, hi_t = tgt0["lo"], tgt0["hi"]
+        col = [box_aabb(o["prim"], o["size_m"])["lo"][0] for j, o in enumerate(plan) if j not in removed and j != i
+               and min(hi_t[1], box_aabb(o["prim"], o["size_m"])["hi"][1]) - max(lo_t[1], box_aabb(o["prim"], o["size_m"])["lo"][1]) > 0
+               and box_aabb(o["prim"], o["size_m"])["lo"][2] < lo_t[2] + 0.02]
+        col_front = min(col) if col else wall_front
+        x_clear = min(col_front - 0.03 - d - robot.cup_r * math.sin(theta), face[0] - slide)   # box stays level
+        pulled = pulled and move(face - np.array([slide, 0, -lift]), a_pick, timeout=3.0) and \
+            move(np.array([x_clear, face[1], face[2] + lift]), a_pick, timeout=8.0)     # clear of its column
         phase("lift + pull clear")
         after = {k: box_pose(k)[0] for k in before}
         disp = sorted(((100 * np.linalg.norm(after[k] - before[k]), k) for k in before), reverse=True)[:3]
-        log("  neighbours dragged: " + ", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in disp))
+        log("  largest movement anywhere in the wall: " + ", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in disp))
+        adj = sorted(((100 * (before[k][0] - after[k][0]), k) for k in adjacent), reverse=True)
+        log("  adjacent boxes pulled towards the robot: " +
+            (", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in adj) or "none adjacent"))
         if stoppers is not None and deployed:
             log(f"  stopper contacts: {sorted(stoppers.touch) or 'none'}")
         if stoppers is not None:
@@ -998,6 +1033,7 @@ def main():
             sim.step(robot)
         if robot.stopped:                                   # collision: hold the box where it is
             break
+        x_after_pull = robot.tool()[0][0]
         if not pulled:
             log("  pull fell short; carrying it to the belt anyway")
         # to the conveyor: belt stopped while placing, tool keeps pointing +x (box hangs in front of it)
@@ -1010,7 +1046,8 @@ def main():
         over = np.array([tool_x, BELT_Y, carry_z])
         place = np.array([tool_x, BELT_Y, BELT_TOP + h / 2 + 0.03 + off])
         # every leg is attempted even if one falls short, so the box is only ever released over the belt
-        legs = [move(np.array([clear_x, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,
+        legs = [move(np.array([x_after_pull, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,  # down, level
+                move(np.array([clear_x, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,
                 move(over, timeout=8.0) if not robot.stopped else False,
                 move(place, timeout=6.0) if not robot.stopped else False]
         ok = all(legs)
@@ -1025,13 +1062,21 @@ def main():
         removed.add(i); picks += 1
         EVENTS["picks"].append({"box": b["prim"], "model": b["model"], "mass_kg": round(b["mass_kg"], 2),
                                 "placed": bool(ok), "neighbours_dragged_cm": [[k, round(c, 2)] for c, k in disp],
+                                "adjacent_pulled_cm": [[k, round(c, 2)] for c, k in adj],
+                                "tool_pitch_deg": round(math.degrees(theta), 1),
                                 "stoppers": {k: v[1] for k, v in deployed.items()},
                                 "stopper_contacts": sorted(stoppers.touch) if stoppers is not None else []})
         if not move(home, timeout=10.0) and robot.stopped:
             break
 
-    for _ in range(int(4.0 / DT)):                                     # let the belt carry the boxes out
+    conveyor.set_speed(max(args.belt_speed, 1.5))                     # let the belt carry the boxes out
+    fe = args.frame_every
+    args.frame_every = 3 * fe
+    for _ in range(int(12.0 / DT)):
         sim.step(robot)
+        if all(box_pose(plan[j]["prim"])[0][0] < 0 for j in EVENTS_PICKED(plan)):
+            break
+    args.frame_every = fe
     out_boxes = [o["prim"] for o in plan if box_pose(o["prim"])[0][0] < 0]
     log(f"{picks} boxes picked, {len(out_boxes)} carried out of the trailer by the conveyor")
 
