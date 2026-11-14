@@ -169,7 +169,7 @@ cmd_launch() {
           --subnet-id "$subnet" --iam-instance-profile "Name=$NAME" --security-group-ids "$sg" \
           --user-data "file://$ud" --instance-initiated-shutdown-behavior "$shutdown_behavior" \
           --metadata-options HttpTokens=required \
-          --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3,DeleteOnTermination=true}' \
+          --block-device-mappings 'DeviceName=/dev/sda1,Ebs={VolumeSize=150,VolumeType=gp3,Throughput=500,Iops=6000,DeleteOnTermination=true}' \
           --tag-specifications "ResourceType=instance,Tags=[{$TAGS},{Key=Name,Value=$NAME}]" "ResourceType=volume,Tags=[{$TAGS}]" \
           "${market[@]}" --query 'Instances[0].InstanceId' --output text 2>/tmp/isaac-run-err); then
         break 2

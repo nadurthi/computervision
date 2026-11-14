@@ -30,7 +30,8 @@ What `launch` creates (all tagged `Project=isaac-boxwall`): an IAM role and inst
 (SSM access + write to the results bucket only), a private S3 bucket `isaac-boxwall-<account>-us-east-1`, a
 security group with **no inbound rules** (a shell is `aws ssm start-session --target <instance-id>`), and a
 **g6.2xlarge** (NVIDIA L4 24 GB, 8 vCPU, 32 GB RAM) from the AWS Deep Learning Base OSS NVIDIA Driver GPU AMI
-(Ubuntu 22.04) with a 150 GB gp3 disk.
+(Ubuntu 22.04) with a 150 GB gp3 disk at 500 MB/s and 6000 IOPS (the default 125 MB/s makes loading the 23 GB Isaac image
+from the S3 cache disk-bound; the extra throughput costs about $0.02/h while the instance runs).
 
 ## Storage: S3 only
 

@@ -166,7 +166,8 @@ def launch(a):
               # any shutdown terminates and deletes the disk: results live only in S3
               InstanceInitiatedShutdownBehavior="terminate",
               BlockDeviceMappings=[{"DeviceName": "/dev/sda1",
-                                    "Ebs": {"VolumeSize": 150, "VolumeType": "gp3", "DeleteOnTermination": True}}],
+                                    "Ebs": {"VolumeSize": 150, "VolumeType": "gp3", "Throughput": 500, "Iops": 6000,
+                                            "DeleteOnTermination": True}}],
               MetadataOptions={"HttpTokens": "required"},
               TagSpecifications=[{"ResourceType": "instance", "Tags": TAGS + [{"Key": "Name", "Value": NAME}]},
                                  {"ResourceType": "volume", "Tags": TAGS}])
