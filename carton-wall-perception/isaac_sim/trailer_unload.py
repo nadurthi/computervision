@@ -124,6 +124,7 @@ def build_boxes(stage):
         pr = PhysxSchema.PhysxRigidBodyAPI.Apply(prim)
         pr.CreateSolverPositionIterationCountAttr(16)
         pr.CreateSolverVelocityIterationCountAttr(2)
+        pr.CreateMaxDepenetrationVelocityAttr(1.0)          # resolve overlaps gently (no box shoots away)
         col = tc.cube(stage, path + "/collider", (0, 0, h / 2), (d, w, h), collide=True, phys_mat=pm)
         UsdGeom.Imageable(col).MakeInvisible()
         pc = PhysxSchema.PhysxCollisionAPI.Apply(col.GetPrim())
@@ -414,16 +415,18 @@ def box_pose(path):
     return np.asarray(p, float), np.asarray(q, float)
 
 
-def free_boxes(plan, done):
-    """Boxes with nothing on top and nothing in front (towards the door) among those not yet picked."""
+def free_boxes(plan, removed):
+    """Boxes with nothing on top and nothing in front (towards the door). Only boxes that left the wall
+    (picked or fallen) stop blocking: an unreachable box still blocks the ones under and behind it, so the
+    robot never pulls a box out from under another."""
     out = []
     for i, b in enumerate(plan):
-        if i in done:
+        if i in removed:
             continue
         d, w, h = b["size_m"]; cx, cy, cz = b["center_m"]
         blocked = False
         for j, o in enumerate(plan):
-            if j == i or j in done:
+            if j == i or j in removed:
                 continue
             od, ow, oh = o["size_m"]; ox, oy, oz = o["center_m"]
             y_ov = abs(oy - cy) < (w + ow) / 2 - 0.01
@@ -488,9 +491,21 @@ def main():
     home = np.array([base_xy[0] + 0.35, base_xy[1], 1.55])
     if not move(home, timeout=12.0):
         log("could not reach the home pose; check --tool-axis / --pedestal")
-    done, picks = set(), 0
+    removed, unreachable, picks = set(), set(), 0
     while picks < (args.picks or 10 ** 6) and not robot.stopped:
-        cand = [i for i in free_boxes(plan, done)]
+        for j, o in enumerate(plan):                          # live poses; a box that left the wall is removed
+            if j in removed:
+                continue
+            p, _ = box_pose(o["prim"])
+            c = p + np.array([0, 0, o["size_m"][2] / 2])
+            if np.linalg.norm(c - np.asarray(o["center_m"])) > 0.15:
+                removed.add(j)
+                log(f"{o['prim']} left the wall (now at {np.round(c, 2).tolist()})")
+                EVENTS.setdefault("fell", []).append(o["prim"])
+            else:
+                o["center_m"] = c.tolist()
+        wall_front = min(o["center_m"][0] - o["half_extent_xy_m"][0] for j, o in enumerate(plan) if j not in removed)
+        cand = [i for i in free_boxes(plan, removed) if i not in unreachable]
         reach = []
         for i in cand:
             p, _ = box_pose(plan[i]["prim"])
@@ -499,22 +514,22 @@ def main():
             if np.linalg.norm(face - np.array([robot.tool_off, 0, 0]) - shoulder) < REACH - 0.05:
                 reach.append((face[2] + h / 2, -abs(face[1] - base_xy[1]), i, face))
             else:
-                EVENTS["skipped"].append(plan[i]["prim"]); done.add(i)
-                log(f"{plan[i]['prim']} out of reach (face at {np.round(face, 2).tolist()}), skipped")
+                EVENTS["skipped"].append(plan[i]["prim"]); unreachable.add(i)
+                log(f"{plan[i]['prim']} out of reach (face at {np.round(face, 2).tolist()}): left in place")
         if not reach:
-            log("no reachable box left")
+            log("no free box within reach (the rest is out of reach or under/behind boxes that are)")
             break
         _, _, i, face = max(reach)                                     # highest first, then nearest the robot
         b = plan[i]
         d, w, h = b["size_m"]
         log(f"pick {picks + 1}: {b['prim']} ({b['model']}, {b['mass_kg']:.1f} kg) top at "
             f"{face[2] + h / 2:.2f} m")
-        before = {o["prim"]: box_pose(o["prim"])[0] for j, o in enumerate(plan) if j not in done and j != i}
+        before = {o["prim"]: box_pose(o["prim"])[0] for j, o in enumerate(plan) if j not in removed and j != i}
         approach = face - np.array([0.15, 0, 0])
         if not move(approach) or not move(face - np.array([0.008, 0, 0]), timeout=4.0):
             if robot.stopped:
                 break
-            done.add(i); EVENTS["skipped"].append(b["prim"]); move(home); continue
+            unreachable.add(i); EVENTS["skipped"].append(b["prim"]); move(home); continue
         robot.grip(b["prim"])
         for _ in range(10):
             sim.step(robot)
@@ -524,31 +539,35 @@ def main():
         lift = min(0.01, max(0.0, tc.H - (face[2] + h / 2) - 0.004))
         pulled = move(face - np.array([slide, 0, 0]), timeout=6.0) and \
             move(face - np.array([slide, 0, -lift]), timeout=3.0) and \
-            move(face - np.array([d + 0.12, 0, -lift]), timeout=6.0)
+            move(np.array([wall_front - 0.08 - d, face[1], face[2] + lift]), timeout=8.0)   # clear of the whole wall
         after = {k: box_pose(k)[0] for k in before}
         disp = sorted(((100 * np.linalg.norm(after[k] - before[k]), k) for k in before), reverse=True)[:3]
         log("  neighbours dragged: " + ", ".join(f"{k.split('/')[-1]} {c:.1f} cm" for c, k in disp))
+        if robot.stopped:                                   # collision: hold the box where it is
+            break
         if not pulled:
-            robot.release()
-            done.add(i); EVENTS["skipped"].append(b["prim"])
-            if robot.stopped:
-                break
-            move(home, timeout=10.0)
-            continue
+            log("  pull fell short; carrying it to the belt anyway")
         # to the conveyor: belt stopped while placing, tool keeps pointing +x (box hangs in front of it)
         conveyor.set_speed(0.0)
         drop_x = base_xy[0] + 0.1
-        over = np.array([drop_x - d / 2, BELT_Y, BELT_TOP + h / 2 + 0.25])
+        carry_z = max(BELT_TOP + h / 2 + 0.40, args.pedestal + h / 2 + 0.12)    # box bottom above the pedestal
+        clear_x = wall_front - 0.08 - d
+        over = np.array([drop_x - d / 2, BELT_Y, carry_z])
         place = np.array([drop_x - d / 2, BELT_Y, BELT_TOP + h / 2 + 0.03])
-        ok = move(np.array([face[0] - d - 0.12, base_xy[1] + 0.3, over[2]]), timeout=8.0) and move(over) \
-            and move(place, timeout=5.0)
+        # every leg is attempted even if one falls short, so the box is only ever released over the belt
+        legs = [move(np.array([clear_x, face[1], carry_z]), timeout=8.0) if not robot.stopped else False,
+                move(over, timeout=8.0) if not robot.stopped else False,
+                move(place, timeout=5.0) if not robot.stopped else False]
+        ok = all(legs)
+        if robot.stopped:                                   # collision while carrying: keep holding, stop
+            break
         robot.release()
         for _ in range(30):
             sim.step(robot)
         move(place - np.array([0.10, 0, 0]), timeout=3.0)
         move(place + np.array([-0.10, 0, 0.30]), timeout=4.0)
         conveyor.set_speed(args.belt_speed)
-        done.add(i); picks += 1
+        removed.add(i); picks += 1
         EVENTS["picks"].append({"box": b["prim"], "model": b["model"], "mass_kg": round(b["mass_kg"], 2),
                                 "placed": bool(ok), "neighbours_dragged_cm": [[k, round(c, 2)] for c, k in disp]})
         if not move(home, timeout=10.0) and robot.stopped:
