@@ -483,7 +483,8 @@ def main():
     cam_x = front - 4.6
     tc.build_trailer(st, collide=True, phys_mat=trailer_pm)
     tc.build_lights(st, cam_x)
-    conveyor = Conveyor(st, front - 0.05, args.belt_speed)          # from the wall face out of the door
+    conveyor = Conveyor(st, front - 0.30, args.belt_speed)          # stops 30 cm short of the wall: a moving belt
+                                                                    # drags anything that touches it, even its end
     robot = Fanuc(st, base_xy)
     sim.camera((cam_x, -0.75, 1.9), (front + 0.2, 0.25, 1.25))
     robot.setup(sim.world)
@@ -596,7 +597,7 @@ def main():
             log("  pull fell short; carrying it to the belt anyway")
         # to the conveyor: belt stopped while placing, tool keeps pointing +x (box hangs in front of it)
         conveyor.set_speed(0.0)
-        drop_x = base_xy[0] + 0.30
+        drop_x = base_xy[0] + 0.05
         off = face[2] - (top_z - h / 2)                     # suction point relative to the box centre (<= 0)
         carry_z = max(BELT_TOP + h / 2 + 0.40, args.pedestal + h / 2 + 0.12) + off   # box bottom above the pedestal
         clear_x = wall_front - 0.08 - d
