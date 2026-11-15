@@ -1,0 +1,22 @@
+# Conda environment for the container: ROS 2 Jazzy + MoveIt 2 from RoboStack,
+# plus the standalone OctoMap / FCL / OMPL Python wheels.
+name: ros
+channels:
+  - robostack-jazzy
+  - conda-forge
+dependencies:
+  - python=3.12
+  - ros-jazzy-ros-base
+  - ros-jazzy-moveit-py
+  - ros-jazzy-moveit-configs-utils
+  - ros-jazzy-moveit-planners-ompl
+  - ros-jazzy-moveit-resources-panda-moveit-config
+  - ros-jazzy-octomap-msgs
+  - numpy
+  - matplotlib
+  - ffmpeg
+  - pip
+  - pip:
+      - python-fcl==0.7.0.11
+      - ompl==2.0.1
+      - octomap-python==1.10.0.0

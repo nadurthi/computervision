@@ -1,0 +1,212 @@
+{
+ "init_s": 0.19,
+ "octomap_frame": "world",
+ "resolution": 0.04,
+ "picks": [
+  {
+   "name": "top_centre_transit",
+   "standalone_path_states_in_collision_moveit": 0,
+   "standalone_path_states_checked": 160,
+   "straight_line_states_in_collision_moveit": 131,
+   "runs": [
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 0,
+     "wall_s": 10.3,
+     "success": true,
+     "waypoints": 35,
+     "joint_length": 4.172990133332785,
+     "duration_s": 3.341096311732495
+    },
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 1,
+     "wall_s": 10.17,
+     "success": true,
+     "waypoints": 31,
+     "joint_length": 3.4289601599357655,
+     "duration_s": 2.946593387541222
+    },
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 2,
+     "wall_s": 10.13,
+     "success": true,
+     "waypoints": 34,
+     "joint_length": 3.946364056351405,
+     "duration_s": 3.234173352816725
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 0,
+     "wall_s": 10.18,
+     "success": true,
+     "waypoints": 33,
+     "joint_length": 4.237321630482622,
+     "duration_s": 3.191222355389853
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 1,
+     "wall_s": 10.14,
+     "success": true,
+     "waypoints": 38,
+     "joint_length": 4.957462910559674,
+     "duration_s": 3.615407367798439
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 2,
+     "wall_s": 10.01,
+     "success": false
+    }
+   ]
+  },
+  {
+   "name": "middle_left_transit",
+   "standalone_path_states_in_collision_moveit": 0,
+   "standalone_path_states_checked": 312,
+   "straight_line_states_in_collision_moveit": 164,
+   "runs": [
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 0,
+     "wall_s": 10.01,
+     "success": false
+    },
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 1,
+     "wall_s": 10.18,
+     "success": true,
+     "waypoints": 46,
+     "joint_length": 4.837346393160186,
+     "duration_s": 4.434796194322848
+    },
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 2,
+     "wall_s": 10.19,
+     "success": true,
+     "waypoints": 39,
+     "joint_length": 5.486886711254723,
+     "duration_s": 3.771355281378293
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 0,
+     "wall_s": 10.0,
+     "success": false
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 1,
+     "wall_s": 10.21,
+     "success": true,
+     "waypoints": 44,
+     "joint_length": 5.9921945807948225,
+     "duration_s": 4.298144722378384
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 2,
+     "wall_s": 10.17,
+     "success": true,
+     "waypoints": 47,
+     "joint_length": 5.472231814609983,
+     "duration_s": 4.524437655256123
+    }
+   ]
+  },
+  {
+   "name": "bottom_left_transit",
+   "standalone_path_states_in_collision_moveit": 0,
+   "standalone_path_states_checked": 266,
+   "straight_line_states_in_collision_moveit": 175,
+   "runs": [
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 0,
+     "wall_s": 10.22,
+     "success": true,
+     "waypoints": 49,
+     "joint_length": 5.962981376161373,
+     "duration_s": 4.742823115022528
+    },
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 1,
+     "wall_s": 10.22,
+     "success": true,
+     "waypoints": 56,
+     "joint_length": 6.382266852129258,
+     "duration_s": 5.451101613057875
+    },
+    {
+     "planner": "RRTstar",
+     "planner_id": "RRTstarkConfigDefault",
+     "run": 2,
+     "wall_s": 10.19,
+     "success": true,
+     "waypoints": 45,
+     "joint_length": 5.8124642929038215,
+     "duration_s": 4.38762833916665
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 0,
+     "wall_s": 10.16,
+     "success": true,
+     "waypoints": 50,
+     "joint_length": 5.4727213114702025,
+     "duration_s": 4.83658048465292
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 1,
+     "wall_s": 10.17,
+     "success": true,
+     "waypoints": 43,
+     "joint_length": 6.255642901893697,
+     "duration_s": 4.108222846779816
+    },
+    {
+     "planner": "InformedRRTstar",
+     "planner_id": "InformedRRTstarkConfigDefault",
+     "run": 2,
+     "wall_s": 10.2,
+     "success": true,
+     "waypoints": 57,
+     "joint_length": 7.621022602083405,
+     "duration_s": 5.558119839696155
+    }
+   ]
+  }
+ ],
+ "checker_agreement": {
+  "states": 3000,
+  "moveit_collision": 1092,
+  "moveit_self_collision": 387,
+  "standalone_invalid": 1850,
+  "standalone_free_but_moveit_world_collision": 0,
+  "standalone_free_but_moveit_self_collision": 0,
+  "standalone_invalid_but_moveit_free": 758
+ },
+ "fk_max_error_m": 5.221260159513938e-12
+}
