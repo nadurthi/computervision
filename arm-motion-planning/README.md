@@ -66,6 +66,10 @@ python aws/launch_ec2.py terminate      # stop it early
 python aws/launch_ec2.py cleanup        # terminate + delete role, instance profile, security group (keeps the bucket)
 ```
 
+Tested end to end on a c7i.2xlarge in us-east-1: the image builds in about 5 minutes and the whole
+run, upload to S3 and self-termination finish within 25 minutes of launch, with the same deterministic
+results as a local run.
+
 Settings: `AWS_REGION` (us-east-1), `INSTANCE_TYPE` (c7i.2xlarge), `MAX_MIN` (90), `SPOT=1`,
 `RUN_ARGS` (default `all`, e.g. `'fcl --quick'`), `BRANCH` (master). No GPU is needed.
 
