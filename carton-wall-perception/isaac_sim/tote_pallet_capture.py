@@ -31,7 +31,8 @@ ap.add_argument("--lidar-config", default="auto",
 ap.add_argument("--lidar-origin-z", type=float, default=None,
                 help="height of the lidar's measurement origin above its prim (m). Ouster configs report points from the "
                      "optical centre 36.18 mm above the mounting base; default: 0.03618 for OS* configs, else 0")
-ap.add_argument("--lidar-frames", type=int, default=18, help="per-frame lidar slices stacked into one scan")
+ap.add_argument("--lidar-frames", type=int, default=18, help="per-frame lidar slices stacked per sensor yaw")
+ap.add_argument("--voxel", type=float, default=0.004, help="thin the merged cloud to one point per voxel (m)")
 ap.add_argument("--tote-rgb", type=float, nargs=3, default=[0.42, 0.43, 0.45])
 args, _ = ap.parse_known_args()
 
@@ -125,10 +126,9 @@ def make_lidar(pos):
     raise RuntimeError("no RTX lidar config worked")
 
 
-def accumulate(ann, step, n_frames=18, az_fov=65.0, max_range=8.0):
-    """Stack n_frames per-frame slices of the rotary RTX lidar (one azimuth slice per rendered frame; 10 Hz at
-    60 fps is 6 frames per turn, so 18 frames is three turns). Keep the forward sector, drop exact duplicates
-    from overlapping turns, and report azimuth coverage. Points are in the sensor frame."""
+def accumulate(ann, step, n_frames=18, max_range=8.0):
+    """Stack n_frames per-frame slices of the rotary RTX lidar (one azimuth slice per rendered frame). Raw
+    points, in whatever frame the annotator reports them; range-gated."""
     import omni.timeline
     tl = omni.timeline.get_timeline_interface()
     if not tl.is_playing():
@@ -141,16 +141,60 @@ def accumulate(ann, step, n_frames=18, az_fov=65.0, max_range=8.0):
         if a.size:
             chunks.append(a.reshape(-1, 3))
     if not chunks:
-        print("[totes] WARNING: lidar returned no points")
         return np.zeros((0, 3), np.float32)
     a = np.concatenate(chunks)
-    r = np.linalg.norm(a, axis=1); az = np.degrees(np.arctan2(a[:, 1], a[:, 0]))
-    a = a[(np.abs(az) < az_fov) & (r > 0.3) & (r < max_range)]
-    a = np.unique(np.round(a, 4), axis=0)
-    az = np.degrees(np.arctan2(a[:, 1], a[:, 0]))
-    cov = len(np.unique(np.floor(az + az_fov).astype(int))) / (2 * az_fov)
-    print(f"[totes] lidar: {len(chunks)} slices, {len(a)} points in +-{az_fov:.0f} deg, azimuth coverage {cov:.2f}")
-    return a
+    r = np.linalg.norm(a, axis=1)
+    return a[(r > 0.3) & (r < max_range)]
+
+
+def rotz(deg):
+    c, s_ = np.cos(np.radians(deg)), np.sin(np.radians(deg))
+    return np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1.0]])
+
+
+def set_lidar_yaw(deg):
+    prim = omni.usd.get_context().get_stage().GetPrimAtPath("/World/Sensors/Lidar")
+    h = np.radians(deg) / 2
+    attr = prim.GetAttribute("xformOp:orient")
+    q = (Gf.Quatf if "quatf" in str(attr.GetTypeName()).lower() else Gf.Quatd)(float(np.cos(h)), 0.0, 0.0, float(np.sin(h)))
+    attr.Set(q)
+
+
+def capture_scan(ann, step, sensor_world, oz, in_stack, yaws=(0.0, 90.0, 180.0, 270.0), n_frames=18,
+                 az_fov=65.0, voxel=0.004):
+    """In the first runs the rotary lidar's per-frame slices left a fixed azimuth gap (+5..+55 deg) that
+    fell on half the stack. Capture at four yaws of the sensor and merge, so every azimuth is covered by some
+    yaw. Whether the annotator reports points in the rotated sensor frame or world-aligned is decided per
+    capture by which interpretation puts more points inside the known stack volume. The merged cloud is cut
+    to +-az_fov around +x and thinned to one point per voxel, which also evens out the density."""
+    off = np.asarray(sensor_world, float) + np.array([0.0, 0.0, oz])
+    parts = []
+    for yaw in yaws:
+        set_lidar_yaw(yaw)
+        for _ in range(6):
+            step()
+        raw = accumulate(ann, step, n_frames).astype(float)
+        if not len(raw):
+            print(f"[totes] yaw {yaw:.0f}: no points"); continue
+        cand = {"sensor": raw @ rotz(yaw).T + off, "world": raw + off}
+        score = {k: int(in_stack(v).sum()) for k, v in cand.items()}
+        pick = max(score, key=score.get)
+        P = cand[pick]
+        az = np.degrees(np.arctan2(P[:, 1] - off[1], P[:, 0] - off[0]))
+        print(f"[totes] yaw {yaw:.0f}: {len(raw)} pts, frame={pick} (stack hits {score}), "
+              f"az coverage +-{az_fov:.0f}: {len(np.unique(np.floor(az[np.abs(az) < az_fov]).astype(int))) / (2 * az_fov):.2f}")
+        parts.append(P)
+    set_lidar_yaw(0.0)
+    if not parts:
+        return np.zeros((0, 3))
+    P = np.concatenate(parts)
+    az = np.degrees(np.arctan2(P[:, 1] - off[1], P[:, 0] - off[0]))
+    P = P[np.abs(az) < az_fov]
+    _, keep = np.unique(np.floor(P / voxel).astype(np.int64), axis=0, return_index=True)
+    P = P[np.sort(keep)]
+    az = np.degrees(np.arctan2(P[:, 1] - off[1], P[:, 0] - off[0]))
+    print(f"[totes] merged: {len(P)} points, az coverage {len(np.unique(np.floor(az).astype(int))) / (2 * az_fov):.2f}")
+    return P
 
 
 def label_points(P, layout, present, lo, hi, pallet_x):
@@ -231,14 +275,17 @@ def main():
     oz = args.lidar_origin_z if args.lidar_origin_z is not None else (0.03618 if cfg.startswith("OS") else 0.0)
     # pass 1: lidar for every pick state, stepping the world only. In the first run, a replicator step for the
     # camera between lidar captures left the rotary lidar returning partial or empty sweeps afterwards.
+    sx = layout["pallet_x"]
+    def in_stack(Q):                                       # known stack volume (pallet footprint, 0.2..2.3 m)
+        return (np.abs(Q[:, 0] - sx) < 0.45) & (np.abs(Q[:, 1]) < 0.65) & (Q[:, 2] > 0.2) & (Q[:, 2] < 2.3)
     scans = {}
     for k in range(n):
         present = set(order[k:])
         set_state(present)
         for _ in range(8):
             world.step(render=True)
-        pts_s = accumulate(lidar_ann, lambda: world.step(render=True), args.lidar_frames)
-        scans[k] = pts_s.astype(float) + sensor + np.array([0.0, 0.0, oz])     # sensor frame: identity rotation
+        scans[k] = capture_scan(lidar_ann, lambda: world.step(render=True), sensor, oz, in_stack,
+                                n_frames=args.lidar_frames, voxel=args.voxel)
     # pass 2: camera images for every pick state
     for k in range(n):
         present = set(order[k:])

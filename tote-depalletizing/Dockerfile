@@ -2,7 +2,7 @@
 #   docker build -t tote-depalletizing .
 #   docker run --rm -v $PWD/results:/app/results tote-depalletizing python scripts/grid_icp_detect.py --scans data/sim --out results/grid_p2mesh
 FROM python:3.11-slim
-RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libegl1 libgomp1 libx11-6 libglib2.0-0 libusb-1.0-0 libudev1 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends libgl1 libegl1 libgomp1 libx11-6 libglib2.0-0 libusb-1.0-0 libudev1 libidn2-0 libbsd0 libxcb1 libxau6 libxdmcp6 libcap2 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
