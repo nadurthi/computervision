@@ -28,7 +28,10 @@ ap.add_argument("--res", type=int, nargs=2, default=[1600, 1200])
 ap.add_argument("--vfov", type=float, default=80.0, help="camera vertical field of view (deg)")
 ap.add_argument("--lidar-config", default="auto",
                 help="RTX lidar config; auto tries OS0 128-channel configs (+-45 deg) first, then OS1, then Example_Rotary")
-ap.add_argument("--lidar-frames", type=int, default=12, help="per-frame slices stacked into one scan")
+ap.add_argument("--lidar-origin-z", type=float, default=None,
+                help="height of the lidar's measurement origin above its prim (m). Ouster configs report points from the "
+                     "optical centre 36.18 mm above the mounting base; default: 0.03618 for OS* configs, else 0")
+ap.add_argument("--lidar-frames", type=int, default=120, help="max frames stepped to cover the forward sector once")
 ap.add_argument("--tote-rgb", type=float, nargs=3, default=[0.42, 0.43, 0.45])
 args, _ = ap.parse_known_args()
 
@@ -122,13 +125,19 @@ def make_lidar(pos):
     raise RuntimeError("no RTX lidar config worked")
 
 
-def accumulate(ann, step, n):
+def accumulate(ann, step, max_frames=120, az_fov=65.0, bin_deg=1.0, max_range=8.0):
+    """One sweep of the forward sector. A rotary RTX lidar returns one azimuth slice per rendered frame, and the
+    slice phase drifts between captures, so a fixed frame count can miss the stack or cover part of it twice.
+    Step until every 1-degree azimuth bin in +-az_fov has been covered once, keeping each bin's first coverage
+    only (no double-counted slices). Points are in the sensor frame."""
     import omni.timeline
     tl = omni.timeline.get_timeline_interface()
     if not tl.is_playing():
         tl.play()
+    nb = int(2 * az_fov / bin_deg)
+    filled = np.zeros(nb, bool)
     chunks = []
-    for _ in range(n):
+    for f in range(max_frames):
         step()
         d = ann.get_data()
         a = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, np.float32)
@@ -136,8 +145,23 @@ def accumulate(ann, step, n):
             rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
             d = ann.get_data()
             a = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, np.float32)
-        if a.size:
-            chunks.append(a.reshape(-1, 3))
+        if not a.size:
+            continue
+        a = a.reshape(-1, 3)
+        r = np.linalg.norm(a, axis=1)
+        az = np.degrees(np.arctan2(a[:, 1], a[:, 0]))
+        keep = (np.abs(az) < az_fov) & (r > 0.3) & (r < max_range)
+        a, az = a[keep], az[keep]
+        b = np.clip(((az + az_fov) / bin_deg).astype(int), 0, nb - 1)
+        new = ~filled[b]
+        if new.any():
+            chunks.append(a[new])
+            filled[np.unique(b[new])] = True
+        if filled.all():
+            print(f"[totes] sector covered after {f + 1} frames")
+            break
+    else:
+        print(f"[totes] WARNING: sector coverage {filled.mean():.2f} after {max_frames} frames")
     return np.concatenate(chunks) if chunks else np.zeros((0, 3), np.float32)
 
 
@@ -216,8 +240,8 @@ def main():
         for _ in range(8):
             world.step(render=True)
         pts_s = accumulate(lidar_ann, lambda: world.step(render=True), args.lidar_frames)
-        P = pts_s.astype(float) + sensor                                    # sensor frame: identity rotation
-        P = P[np.linalg.norm(pts_s, axis=1) > 0.3]
+        oz = args.lidar_origin_z if args.lidar_origin_z is not None else (0.03618 if cfg.startswith("OS") else 0.0)
+        P = pts_s.astype(float) + sensor + np.array([0.0, 0.0, oz])          # sensor frame: identity rotation
         for _ in range(5):
             rep.orchestrator.step(rt_subframes=8, pause_timeline=False)
             if np.asarray(anns["rgb"].get_data()).ndim == 3:
@@ -247,6 +271,8 @@ def main():
                        camera=dict(K=K.tolist(), width=W, height=H, position=C.tolist(), R_world_from_cam=R_WC.tolist(),
                                    model="pinhole, no distortion; x right, y down, z optical axis")),
                   open(os.path.join(d, "gt.json"), "w"), indent=1)
+        fl = P[:, 2] < 0.05
+        print(f"[totes] floor check: median z of floor returns {np.median(P[fl, 2]) if fl.any() else float('nan'):+.4f} m (should be ~0)")
         hits = np.unique(np.load(os.path.join(d, "labels.npy")), return_counts=True)
         print(f"[totes] scan {k:02d}: {len(P)} lidar points, label counts {dict(zip(hits[0].tolist(), hits[1].tolist()))}")
     print("[totes] done ->", os.path.abspath(args.out))

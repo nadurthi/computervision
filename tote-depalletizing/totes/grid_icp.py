@@ -11,6 +11,8 @@
        inlier     |rho_i - t_i| < tau                (the model explains the return)
        violation  rho_i - t_i > tau_v                (the beam went *through* where the model claims a surface)
        score    = inliers - lambda * violations,  accepted if inliers/(hits) >= f_min and inliers >= n_min
+   Points are weighted by inverse local density in the face plane, so the counts measure area: a strip
+   scanned twice by overlapping lidar slices does not outvote a strip scanned once.
    Point-to-surface distance alone cannot separate a true tote from a pose straddling two neighbours: the faces
    are flat and coplanar, and this CAD's ribs repeat with the tote pitch. The beams that pass through the V-gap
    between two tapered totes can: they violate a straddling pose and not the true ones.
@@ -42,13 +44,23 @@ def preprocess(P, sensor, min_points=150):
     return Q, np.nonzero(keep)[0], Rf, u, s, v, slabs
 
 
+def density_weights(u, v, r=0.02):
+    """w_i = median(n) / n_i, n_i = points within r in the face plane. Sums of w measure surface area, not
+    point count, so a region scanned twice (overlapping lidar slices, or closer to the sensor) does not
+    outvote the rest."""
+    from scipy.spatial import cKDTree
+    X = np.c_[u, v]
+    n = np.array([len(x) for x in cKDTree(X).query_ball_point(X, r)], float)
+    return np.median(n) / n
+
+
 class GridICP:
-    def __init__(self, mesh, method="p2mesh", tau=0.012, tau_v=0.015, lam=5.0, f_min=0.7, n_min=100, dof=4):
+    def __init__(self, mesh, method="p2mesh", tau=0.012, tau_v=0.015, lam=5.0, f_min=0.7, n_min=100, dof=4, max_yaw=5.0):
         self.mesh = mesh; self.cad = cad_profile(mesh); self.method = method
         self.p2m = PointToMeshICP(mesh, cull=True)                  # used for scoring
         self.solver = PointToMeshICP(mesh, cull=True, residual=method, dof=dof)
         self.lo = np.asarray(mesh.vertices).min(0); self.hi = np.asarray(mesh.vertices).max(0)
-        self.tau, self.tau_v, self.lam, self.f_min, self.n_min = tau, tau_v, lam, f_min, n_min
+        self.tau, self.tau_v, self.lam, self.f_min, self.n_min, self.max_yaw = tau, tau_v, lam, f_min, n_min, max_yaw
         self.full = o3d.t.geometry.RaycastingScene()
         m = o3d.t.geometry.TriangleMesh()
         m.vertex.positions = o3d.core.Tensor(np.asarray(mesh.vertices, np.float32))
@@ -68,8 +80,10 @@ class GridICP:
             T = self.solver.run(P[m], T, sensor, iters=15, d_max=(max(0.05 * 0.5 ** k, 0.015), 0.015))["T"]
         return T
 
-    def score(self, P, T, sensor):
+    def score(self, P, T, sensor, w=None):
         m, q = self._in_box(P, T, np.array([0.05, 0.3, 0.05]))
+        w = self.w if w is None and getattr(self, "w", None) is not None and len(self.w) == len(P) else w
+        w = np.ones(len(P)) if w is None else w
         if m.sum() == 0:
             return dict(inliers=0, violations=0, hits=0, frac=0.0, score=-1e9)
         o = T[:3, :3].T @ (np.asarray(sensor, float) - T[:3, 3])
@@ -77,9 +91,9 @@ class GridICP:
         rays = np.concatenate([np.broadcast_to(o, q.shape), dirn], 1).astype(np.float32)
         t = self.full.cast_rays(o3d.core.Tensor(rays))["t_hit"].numpy()
         hit = np.isfinite(t)
-        res = rho[hit] - t[hit]
-        inl = int((np.abs(res) < self.tau).sum()); vio = int((res > self.tau_v).sum())
-        return dict(inliers=inl, violations=vio, hits=int(hit.sum()), frac=inl / max(hit.sum(), 1),
+        res = rho[hit] - t[hit]; wh = w[m][hit]
+        inl = float(wh[np.abs(res) < self.tau].sum()); vio = float(wh[res > self.tau_v].sum())
+        return dict(inliers=inl, violations=vio, hits=float(wh.sum()), frac=inl / max(wh.sum(), 1e-9),
                     score=inl - self.lam * vio)
 
     def slide(self, P, T, sensor, steps=(0.04, 0.02, 0.01, 0.005)):
@@ -111,6 +125,7 @@ class GridICP:
 
     def run(self, P, sensor, du=0.15, dv=0.075, iou_max=0.2, return_all=False):
         Q, qidx, Rf, u, s, v, slabs = preprocess(P, sensor)
+        self.w = density_weights(u, v)
         seeds = self.seeds(Rf, u, s, v, slabs, du, dv)
         hyps = []
         for sd in seeds:
@@ -120,6 +135,12 @@ class GridICP:
             T = self.slide(Q, T, sensor)
             T = self.fit(Q, T, sensor, margins=(0.02, 0.01)) if T is not None else None
             if T is None:
+                continue
+            # a tote rests flat and faces the sensor like the stack face: reject poses that drifted in yaw
+            # (e.g. a side wall fitted to the face) or in depth (out of the seed's slab)
+            dyaw = np.degrees(np.arctan2(*(Rf.T @ T[:3, 0])[[1, 0]]))
+            ddepth = (Rf.T @ (T[:3, 3] - sd["T0"][:3, 3]))[1]
+            if abs(dyaw) > self.max_yaw or abs(ddepth) > 0.05:
                 continue
             sc = self.score(Q, T, sensor)
             hyps.append(dict(T=T, T0=sd["T0"], slab=sd["slab"], **sc))
