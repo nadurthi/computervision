@@ -31,7 +31,7 @@ ap.add_argument("--lidar-config", default="auto",
 ap.add_argument("--lidar-origin-z", type=float, default=None,
                 help="height of the lidar's measurement origin above its prim (m). Ouster configs report points from the "
                      "optical centre 36.18 mm above the mounting base; default: 0.03618 for OS* configs, else 0")
-ap.add_argument("--lidar-frames", type=int, default=120, help="max frames stepped to cover the forward sector once")
+ap.add_argument("--lidar-frames", type=int, default=18, help="per-frame lidar slices stacked into one scan")
 ap.add_argument("--tote-rgb", type=float, nargs=3, default=[0.42, 0.43, 0.45])
 args, _ = ap.parse_known_args()
 
@@ -125,44 +125,32 @@ def make_lidar(pos):
     raise RuntimeError("no RTX lidar config worked")
 
 
-def accumulate(ann, step, max_frames=120, az_fov=65.0, bin_deg=1.0, max_range=8.0):
-    """One sweep of the forward sector. A rotary RTX lidar returns one azimuth slice per rendered frame, and the
-    slice phase drifts between captures, so a fixed frame count can miss the stack or cover part of it twice.
-    Step until every 1-degree azimuth bin in +-az_fov has been covered once, keeping each bin's first coverage
-    only (no double-counted slices). Points are in the sensor frame."""
+def accumulate(ann, step, n_frames=18, az_fov=65.0, max_range=8.0):
+    """Stack n_frames per-frame slices of the rotary RTX lidar (one azimuth slice per rendered frame; 10 Hz at
+    60 fps is 6 frames per turn, so 18 frames is three turns). Keep the forward sector, drop exact duplicates
+    from overlapping turns, and report azimuth coverage. Points are in the sensor frame."""
     import omni.timeline
     tl = omni.timeline.get_timeline_interface()
     if not tl.is_playing():
         tl.play()
-    nb = int(2 * az_fov / bin_deg)
-    filled = np.zeros(nb, bool)
     chunks = []
-    for f in range(max_frames):
+    for _ in range(n_frames):
         step()
         d = ann.get_data()
         a = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, np.float32)
-        if not a.size:
-            rep.orchestrator.step(rt_subframes=1, pause_timeline=False)
-            d = ann.get_data()
-            a = np.asarray(d.get("data", np.zeros((0, 3))) if isinstance(d, dict) else d, np.float32)
-        if not a.size:
-            continue
-        a = a.reshape(-1, 3)
-        r = np.linalg.norm(a, axis=1)
-        az = np.degrees(np.arctan2(a[:, 1], a[:, 0]))
-        keep = (np.abs(az) < az_fov) & (r > 0.3) & (r < max_range)
-        a, az = a[keep], az[keep]
-        b = np.clip(((az + az_fov) / bin_deg).astype(int), 0, nb - 1)
-        new = ~filled[b]
-        if new.any():
-            chunks.append(a[new])
-            filled[np.unique(b[new])] = True
-        if filled.all():
-            print(f"[totes] sector covered after {f + 1} frames")
-            break
-    else:
-        print(f"[totes] WARNING: sector coverage {filled.mean():.2f} after {max_frames} frames")
-    return np.concatenate(chunks) if chunks else np.zeros((0, 3), np.float32)
+        if a.size:
+            chunks.append(a.reshape(-1, 3))
+    if not chunks:
+        print("[totes] WARNING: lidar returned no points")
+        return np.zeros((0, 3), np.float32)
+    a = np.concatenate(chunks)
+    r = np.linalg.norm(a, axis=1); az = np.degrees(np.arctan2(a[:, 1], a[:, 0]))
+    a = a[(np.abs(az) < az_fov) & (r > 0.3) & (r < max_range)]
+    a = np.unique(np.round(a, 4), axis=0)
+    az = np.degrees(np.arctan2(a[:, 1], a[:, 0]))
+    cov = len(np.unique(np.floor(az + az_fov).astype(int))) / (2 * az_fov)
+    print(f"[totes] lidar: {len(chunks)} slices, {len(a)} points in +-{az_fov:.0f} deg, azimuth coverage {cov:.2f}")
+    return a
 
 
 def label_points(P, layout, present, lo, hi, pallet_x):
@@ -232,20 +220,36 @@ def main():
     world.play()
     for _ in range(30):
         world.step(render=True)
-    for k in range(min(args.picks, len(order))):
-        present = set(order[k:])
+    def set_state(present):
         for t in layout["totes"]:
-            T = np.array(t["T"]) if t["id"] in present else np.array(t["T"]) + np.r_[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -50.0, 0, 0, 0, 0].reshape(4, 4)
+            T = np.array(t["T"], float)
+            if t["id"] not in present:
+                T = T.copy(); T[2, 3] -= 50.0                  # park removed totes under the floor
             ops[t["id"]].Set(Gf.Matrix4d(*T.T.ravel().tolist()))
+
+    n = min(args.picks, len(order))
+    oz = args.lidar_origin_z if args.lidar_origin_z is not None else (0.03618 if cfg.startswith("OS") else 0.0)
+    # pass 1: lidar for every pick state, stepping the world only. In the first run, a replicator step for the
+    # camera between lidar captures left the rotary lidar returning partial or empty sweeps afterwards.
+    scans = {}
+    for k in range(n):
+        present = set(order[k:])
+        set_state(present)
         for _ in range(8):
             world.step(render=True)
         pts_s = accumulate(lidar_ann, lambda: world.step(render=True), args.lidar_frames)
-        oz = args.lidar_origin_z if args.lidar_origin_z is not None else (0.03618 if cfg.startswith("OS") else 0.0)
-        P = pts_s.astype(float) + sensor + np.array([0.0, 0.0, oz])          # sensor frame: identity rotation
+        scans[k] = pts_s.astype(float) + sensor + np.array([0.0, 0.0, oz])     # sensor frame: identity rotation
+    # pass 2: camera images for every pick state
+    for k in range(n):
+        present = set(order[k:])
+        set_state(present)
+        for _ in range(3):
+            world.step(render=True)
         for _ in range(5):
             rep.orchestrator.step(rt_subframes=8, pause_timeline=False)
             if np.asarray(anns["rgb"].get_data()).ndim == 3:
                 break
+        P = scans[k]
         d = os.path.join(args.out, f"scan_{k:02d}"); os.makedirs(d, exist_ok=True)
         np.save(os.path.join(d, "points.npy"), P.astype(np.float32))
         np.save(os.path.join(d, "labels.npy"), label_points(P, layout, present, lo, hi, layout["pallet_x"]))
@@ -267,7 +271,7 @@ def main():
             totes.append(dict(id=t["id"], layer=t["layer"], row=t["row"], col=t["col"], present=t["id"] in present,
                               T=T.tolist(), front_center=(T @ c_front)[:3].tolist(), front_normal=(T[:3, :3] @ n_front).tolist()))
         json.dump(dict(sensor_position=sensor.tolist(), totes=totes, source=f"isaac_sim_rtx_lidar:{cfg}",
-                       removed=order[:k], pick_order=order,
+                       lidar_origin_z=oz, removed=order[:k], pick_order=order,
                        camera=dict(K=K.tolist(), width=W, height=H, position=C.tolist(), R_world_from_cam=R_WC.tolist(),
                                    model="pinhole, no distortion; x right, y down, z optical axis")),
                   open(os.path.join(d, "gt.json"), "w"), indent=1)
