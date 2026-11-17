@@ -1,0 +1,29 @@
+{
+ "tote": "tote_600x400x300.obj",
+ "units": "m",
+ "frame": "origin base centre, x 600 side, y 400 side, z up; front = -y",
+ "front_face_center": [
+  0.0,
+  -0.188,
+  0.139
+ ],
+ "front_face_normal": [
+  0.0,
+  -0.99835,
+  0.05746
+ ],
+ "watertight": true,
+ "triangles": 164,
+ "bounds": [
+  [
+   -0.3,
+   -0.204,
+   0.0
+  ],
+  [
+   0.3,
+   0.204,
+   0.3
+  ]
+ ]
+}

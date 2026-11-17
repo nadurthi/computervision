@@ -24,6 +24,9 @@
 #   STEPS='smoke smoke_ids lidar_test box_wall unload_cell trailer_wall'   steps to run, in this order
 #   TRAILER_ARGS=''               extra args for trailer_wall.py (e.g. '--rows 1 --yaw 8')
 #   UNLOAD_PICKS=4  UNLOAD_ARGS=''  picks and extra args for trailer_unload.py
+#   TOTE_PICKS=6  TOTE_ARGS=''    tote_pallet: depalletizing states captured (lidar + camera), extra args
+#   tote_icp step: builds ../../tote-depalletizing/Dockerfile and runs its pipeline + grid ICP on /out/tote_pallet
+#                  (STEPS="smoke tote_pallet tote_icp" for the tote study only)
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MODE="${MODE:-docker}"
@@ -107,6 +110,23 @@ want trailer_wall && isaac trailer_wall trailer_wall.py --out /out/trailer_wall 
 #         left/right/bottom gripper stoppers, friction, conveyor out of the door
 want trailer_unload && isaac trailer_unload trailer_unload.py --simready /simready --out /out/trailer_unload \
   --picks "${UNLOAD_PICKS:-4}" --collision-test ${UNLOAD_ARGS:-}
+
+# ---- 5) tote stack on a pallet: RTX lidar + camera, sequence of depalletizing states (tote-depalletizing/)
+want tote_pallet && isaac tote_pallet tote_pallet_capture.py --out /out/tote_pallet --picks "${TOTE_PICKS:-6}" ${TOTE_ARGS:-}
+# ---- 6) tote detection + point-to-mesh ICP on those scans, in the tote-depalletizing container (CPU only)
+if want tote_icp; then
+  TOTE_DIR="$(cd "$HERE/../../tote-depalletizing" && pwd)"
+  t0=$(date +%s)
+  echo "[run_all] step tote_icp"
+  {
+    docker build -t tote-depalletizing "$TOTE_DIR" &&
+    docker run --rm -v "$OUT:/out:rw" tote-depalletizing bash -c "
+      python scripts/run_pipeline.py --scans /out/tote_pallet --out /out/tote_icp/pipeline &&
+      python scripts/grid_icp_detect.py --scans /out/tote_pallet --method p2mesh --out /out/tote_icp/grid_p2mesh &&
+      python scripts/grid_icp_detect.py --scans /out/tote_pallet --method p2plane --out /out/tote_icp/grid_p2plane --no-figs"
+  } > "$OUT/tote_icp.log" 2>&1
+  echo "tote_icp exit=$? seconds=$(( $(date +%s) - t0 ))" >> "$OUT/steps.txt"
+fi
 
 ls -laR "$OUT" > "$OUT/listing.txt"
 

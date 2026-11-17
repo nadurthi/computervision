@@ -1,0 +1,4 @@
+scan_00: seeds 140 -> valid 50 -> totes 14 (visible 14, missed [], dup 0, false []), err rms xyz [0.25 1.   2.2 ] mm, max 6.7 mm, 26.0 s
+scan_01: seeds 270 -> valid 48 -> totes 14 (visible 14, missed [], dup 0, false []), err rms xyz [0.23 1.02 4.38] mm, max 13.4 mm, 28.7 s
+scan_02: seeds 250 -> valid 42 -> totes 14 (visible 14, missed [], dup 0, false []), err rms xyz [0.26 0.81 1.37] mm, max 2.7 mm, 25.6 s
+scan_03: seeds 250 -> valid 42 -> totes 13 (visible 13, missed [], dup 0, false []), err rms xyz [0.51 1.13 4.37] mm, max 15.3 mm, 25.5 s
