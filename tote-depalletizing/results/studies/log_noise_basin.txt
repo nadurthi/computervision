@@ -15,3 +15,4 @@ noise 0.02 1 [('p2mesh', 14, 3.74, 14.99), ('o3d_p2plane', 14, 5.56, 14.82), ('i
 noise 0.02 2 [('p2mesh', 16, 4.14, 105.42), ('o3d_p2plane', 16, 5.95, 101.94), ('init_only', 16, 9.41, 104.62)]
 basin tote 0 done
 basin tote 12 done
+basin tote 24 done
