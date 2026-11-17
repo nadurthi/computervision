@@ -113,3 +113,18 @@ Grid-seeded ICP, scans 00–03 (55 visible totes, including back-row totes expos
 |---|---|---|---|---|
 | point-to-mesh | 55 / 55 | 0 | 0 | 0.3 / 1.0 / 3.4 (max 15 mm: back-row tote, top 11 cm visible) |
 | point-to-plane | 55 / 55 | 1 | 2 | straddles are 0.2–0.3 m off; otherwise 0.6 / 0.9 / 1.4–7 |
+
+## Isaac Sim results (RTX lidar OS0-128 + camera, g6.2xlarge, run-20261117T040645Z)
+
+Six pick states (0-5 totes removed), grid-seeded point-to-mesh ICP (4 DOF) with the ray-consistency score:
+**79 of 79 visible totes found, no duplicates, no false detections.** Front-face centre error, RMS world
+x / y / z = 0.49 / 1.21 / 5.7 mm (mean z bias -1.7 mm), p95 |e| 7.8 mm, max 33.6 mm (a back-row tote seen only
+over the front row). Per-scan JSON and figures: `results/isaac_grid_p2mesh/`; two of the scans: `data/isaac/`.
+
+What the Isaac runs needed (all in `tote_pallet_capture.py`):
+* lidar for all pick states first, camera second (a replicator camera step left the rotary lidar returning
+  partial or empty sweeps);
+* captures at sensor yaw 0/90/180/270 merged, because the per-frame slices left a fixed azimuth gap
+  (+5..+55 deg) on half of the stack;
+* the Ouster optical-origin offset (36.18 mm above the mount): without it the floor came back at z = -0.036 m;
+* inverse-density point weights in the grid score (overlapping sweeps scan some strips several times).

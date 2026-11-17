@@ -55,12 +55,13 @@ def density_weights(u, v, r=0.02):
 
 
 class GridICP:
-    def __init__(self, mesh, method="p2mesh", tau=0.012, tau_v=0.015, lam=5.0, f_min=0.7, n_min=100, dof=4, max_yaw=5.0):
+    def __init__(self, mesh, method="p2mesh", tau=0.012, tau_v=0.015, lam=5.0, f_min=0.7, n_min=100, dof=4, max_yaw=5.0, min_rel=0.08):
         self.mesh = mesh; self.cad = cad_profile(mesh); self.method = method
         self.p2m = PointToMeshICP(mesh, cull=True)                  # used for scoring
         self.solver = PointToMeshICP(mesh, cull=True, residual=method, dof=dof)
         self.lo = np.asarray(mesh.vertices).min(0); self.hi = np.asarray(mesh.vertices).max(0)
         self.tau, self.tau_v, self.lam, self.f_min, self.n_min, self.max_yaw = tau, tau_v, lam, f_min, n_min, max_yaw
+        self.min_rel = min_rel
         self.full = o3d.t.geometry.RaycastingScene()
         m = o3d.t.geometry.TriangleMesh()
         m.vertex.positions = o3d.core.Tensor(np.asarray(mesh.vertices, np.float32))
@@ -159,6 +160,17 @@ class GridICP:
         for h in acc:                                                   # polish
             h["T"] = self.slide(Q, h["T"], sensor, steps=(0.005, 0.0025))
             h.update(self.score(Q, h["T"], sensor))
+        # final clean-up after polishing: overlaps re-checked best-first, and poses explaining far less
+        # surface than a typical accepted tote (a sliver of pallet or a back rim) dropped
+        acc.sort(key=lambda h: -h["score"])
+        final = []
+        for h in acc:
+            if all(self.face_iou(h["T"], a["T"]) <= iou_max for a in final):
+                final.append(h)
+        if final:
+            ref = np.median([h["score"] for h in final])
+            final = [h for h in final if h["score"] >= self.min_rel * ref]
+        acc = final
         for h in acc:
             h["points"] = Q[self._in_box(Q, h["T"], 0.01)[0]]
         info = dict(n_seeds=len(seeds), n_converged=len(hyps), n_valid=len(ok), slabs=slabs, Rf=Rf)

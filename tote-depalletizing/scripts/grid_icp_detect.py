@@ -64,7 +64,8 @@ for d in sorted(glob.glob(os.path.join(a.scans, "scan_*"))):
         import matplotlib; matplotlib.use("Agg"); import matplotlib.pyplot as plt
         from matplotlib.patches import Rectangle
         Rf = info["Rf"]; Q = P @ Rf
-        fig, ax = plt.subplots(1, 2 if "camera" in gt else 1, figsize=(15 if "camera" in gt else 7, 8), squeeze=False)
+        has_cam = "camera" in gt and os.path.exists(os.path.join(d, "rgb.png"))
+        fig, ax = plt.subplots(1, 2 if has_cam else 1, figsize=(15 if has_cam else 7, 8), squeeze=False)
         ax0 = ax[0, 0]
         fl = P[:, 2] > 0.03; Q = Q[fl]
         ax0.scatter(Q[:, 0], Q[:, 2], s=0.2, c=Q[:, 1], cmap="viridis", vmin=np.percentile(Q[:, 1], 2), vmax=np.percentile(Q[:, 1], 60))
@@ -78,7 +79,7 @@ for d in sorted(glob.glob(os.path.join(a.scans, "scan_*"))):
             ax0.plot(f[0], f[2], "+", color="k", ms=10, mew=2)
         ax0.set_aspect("equal"); ax0.set_xlabel("u along face (m)"); ax0.set_ylabel("height (m)")
         ax0.set_title(f"{name}: {info['n_seeds']} seeds (grey: seed -> converged), {len(totes)} totes ({a.method})")
-        if "camera" in gt:
+        if has_cam:
             from PIL import Image
             from totes.camera import project
             cam = gt["camera"]; K = np.array(cam["K"]); C = np.array(cam["position"]); Rwc = np.array(cam["R_world_from_cam"])
