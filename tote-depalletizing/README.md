@@ -16,14 +16,15 @@ totes/cad.py          stand-in tote CAD (trimesh + manifold booleans), EUR palle
 totes/scene.py        7-layer stack (2x2 per layer, ±2 mm / ±0.8° placement jitter), pick order, ground truth
 totes/lidar.py        CPU stand-in lidar: Ouster-OS0-128-like pattern ray-cast with Open3D, range noise, grazing dropout
 totes/camera.py       CPU stand-in camera beside the lidar: pinhole render (RGB, z-depth, instance ids)
-totes/detect.py       seam-profile detector: floor RANSAC, face plane, depth slabs, layer seams, tote split
+totes/detect.py       baseline only: seam-profile detector (layer seams + tote split), used to compare ICP variants
 totes/icp.py          point-to-mesh ICP (sensor-facing triangles, Huber Gauss-Newton, 6 or 4 DOF), point-to-plane, Open3D baselines
-totes/grid_icp.py     detector-free: ICP from a grid of initial poses + ray-consistency score + max-weight selection
+totes/grid_icp.py     MAIN DETECTOR: point-to-mesh ICP from a grid of initial poses over the front-facing points,
+                      ray-consistency (free-space) score, max-weight non-overlapping selection
 totes/pipeline.py     detect -> ICP -> front-face centre, scoring against gt.json
 scripts/make_cad.py             writes assets/ (tote OBJ/STL, pallet, tote_cad.json with the front-face centre/normal)
 scripts/simulate_scans.py       lidar + camera captures for each pick state -> data/sim/scan_XX/
-scripts/run_pipeline.py         seam detector + ICP variants on a folder of scans, error table
-scripts/grid_icp_detect.py      grid-seeded ICP (point-to-mesh or point-to-plane) on a folder of scans, figures
+scripts/run_pipeline.py         baseline: seam detector + ICP variants (culled / unculled / Open3D) on a folder of scans
+scripts/grid_icp_detect.py      MAIN: grid-seeded ICP (point-to-mesh or point-to-plane) on a folder of scans, figures
 scripts/studies.py              noise sweep, convergence basin, full 28-pick depalletizing loop
 scripts/export_isaac_assets.py  copies tote/pallet OBJ + stack layout to carton-wall-perception/isaac_sim/assets/totes
 data/sim/scan_00..03            committed sample captures (see below)
