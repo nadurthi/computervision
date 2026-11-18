@@ -1,0 +1,1273 @@
+{
+	"Calibration": {
+		"Dynamic": {
+			"AngleOffsets": {
+				"Epipolar": 0,
+				"OpticalAxis": 0,
+				"Vergence": 0
+			},
+			"CalibrationHistory": null,
+			"Monocular": {
+				"Left": {
+					"Camera": [
+						[
+							1404.8204345703125,
+							0,
+							0
+						],
+						[
+							0,
+							1404.5731201171875,
+							0
+						],
+						[
+							1281.9327392578125,
+							1065.76953125,
+							1
+						]
+					]
+				},
+				"Right": {
+					"Camera": [
+						[
+							1420.4884033203125,
+							0,
+							0
+						],
+						[
+							0,
+							1420.3426513671875,
+							0
+						],
+						[
+							1207.5023193359375,
+							998.072998046875,
+							1
+						]
+					]
+				}
+			},
+			"Raw": {
+				"Angle": {
+					"Epipolar": 0.006837307964621545,
+					"OpticalAxis": 0.006600183215921662,
+					"Vergence": 0.24264785555055407
+				},
+				"Baseline": 243.747760669933086319,
+				"Left": {
+					"Distortion": {
+						"K1": -0.126416102051734924,
+						"K2": 0.109358206391334534,
+						"K3": -0.000333731150021777,
+						"Rx": -0.001146084163337946,
+						"Ry": 0.003023001831024885,
+						"T1": 0.000484135816805065,
+						"T2": 0.000425667501986027
+					},
+					"Projection": [
+						[
+							1404.8204345703125,
+							0,
+							0
+						],
+						[
+							0,
+							1404.5731201171875,
+							0
+						],
+						[
+							1281.9327392578125,
+							1065.76953125,
+							1
+						]
+					],
+					"Resolution": [
+						2464,
+						2064
+					],
+					"Rotation": [
+						[
+							0.992683994230183719,
+							0.00070579699805114,
+							-0.120739345077758756
+						],
+						[
+							-0.000246868373556813,
+							0.999992688945772201,
+							0.003815902384784416
+						],
+						[
+							0.12074115559830749,
+							-0.003758178495176618,
+							0.992676910902627885
+						]
+					]
+				},
+				"Right": {
+					"Distortion": {
+						"K1": -0.122965171933174133,
+						"K2": 0.108712196350097656,
+						"K3": 0.00003203436426702,
+						"Rx": 0.005027296952903271,
+						"Ry": 0.001356624648906291,
+						"T1": -0.000404193502618,
+						"T2": -0.00001677225009189
+					},
+					"Projection": [
+						[
+							1420.4884033203125,
+							0,
+							0
+						],
+						[
+							0,
+							1420.3426513671875,
+							0
+						],
+						[
+							1207.5023193359375,
+							998.072998046875,
+							1
+						]
+					],
+					"Resolution": [
+						2464,
+						2064
+					],
+					"Rotation": [
+						[
+							0.992597266651268351,
+							-0.00584565618438969,
+							0.121311559796273033
+						],
+						[
+							0.006258366592459132,
+							0.99997585190738858,
+							-0.003021332435666441
+						],
+						[
+							-0.121290968682854577,
+							0.003758178530395437,
+							0.992609881579922804
+						]
+					]
+				},
+				"Temperature": 35.71875
+			},
+			"Stereo": {
+				"DisparityMapOffset": 0,
+				"Left": {
+					"Camera": [
+						[
+							1639.44775390625,
+							0,
+							0
+						],
+						[
+							0,
+							1639.44775390625,
+							0
+						],
+						[
+							912.58123779296875,
+							1035.6810302734375,
+							1
+						]
+					]
+				},
+				"Reprojection": [
+					[
+						1,
+						0,
+						0,
+						0
+					],
+					[
+						0,
+						1,
+						0,
+						0
+					],
+					[
+						0,
+						0,
+						0,
+						0.004102601793146863
+					],
+					[
+						-912.58123779296875,
+						-1035.6810302734375,
+						1639.44775390625,
+						2.710042675594420025
+					]
+				],
+				"Right": {
+					"Camera": [
+						[
+							1639.44775390625,
+							0,
+							0
+						],
+						[
+							0,
+							1639.44775390625,
+							0
+						],
+						[
+							1573.1480712890625,
+							1035.6810302734375,
+							1
+						]
+					]
+				}
+			},
+			"Temperature": 35.71875
+		},
+		"Monocular": {
+			"Left": {
+				"BinningShift": [
+					0,
+					0
+				]
+			},
+			"Right": {
+				"BinningShift": [
+					0,
+					0
+				]
+			}
+		},
+		"Static": {
+			"Raw": [
+				{
+					"Angle": {
+						"Epipolar": 0.006837307964621545,
+						"OpticalAxis": 0.006600183215921662,
+						"Vergence": 0.24264785555055407
+					},
+					"Baseline": 243.747760669933086319,
+					"Left": {
+						"Distortion": {
+							"K1": -0.126416102051734924,
+							"K2": 0.109358206391334534,
+							"K3": -0.000333731150021777,
+							"Rx": -0.001146084163337946,
+							"Ry": 0.003023001831024885,
+							"T1": 0.000484135816805065,
+							"T2": 0.000425667501986027
+						},
+						"Projection": [
+							[
+								1404.8204345703125,
+								0,
+								0
+							],
+							[
+								0,
+								1404.5731201171875,
+								0
+							],
+							[
+								1281.9327392578125,
+								1065.76953125,
+								1
+							]
+						],
+						"Resolution": [
+							2464,
+							2064
+						],
+						"Rotation": [
+							[
+								0.992683994230183719,
+								0.00070579699805114,
+								-0.120739345077758756
+							],
+							[
+								-0.000246868373556813,
+								0.999992688945772201,
+								0.003815902384784416
+							],
+							[
+								0.12074115559830749,
+								-0.003758178495176618,
+								0.992676910902627885
+							]
+						]
+					},
+					"Right": {
+						"Distortion": {
+							"K1": -0.122965171933174133,
+							"K2": 0.108712196350097656,
+							"K3": 0.00003203436426702,
+							"Rx": 0.005027296952903271,
+							"Ry": 0.001356624648906291,
+							"T1": -0.000404193502618,
+							"T2": -0.00001677225009189
+						},
+						"Projection": [
+							[
+								1420.4884033203125,
+								0,
+								0
+							],
+							[
+								0,
+								1420.3426513671875,
+								0
+							],
+							[
+								1207.5023193359375,
+								998.072998046875,
+								1
+							]
+						],
+						"Resolution": [
+							2464,
+							2064
+						],
+						"Rotation": [
+							[
+								0.992597266651268351,
+								-0.00584565618438969,
+								0.121311559796273033
+							],
+							[
+								0.006258366592459132,
+								0.99997585190738858,
+								-0.003021332435666441
+							],
+							[
+								-0.121290968682854577,
+								0.003758178530395437,
+								0.992609881579922804
+							]
+						]
+					},
+					"Temperature": null
+				}
+			],
+			"Rectified": {
+				"Left": {
+					"Projection": [
+						[
+							1639.44775390625,
+							0,
+							0
+						],
+						[
+							0,
+							1639.44775390625,
+							0
+						],
+						[
+							912.58123779296875,
+							1035.6810302734375,
+							1
+						]
+					],
+					"Resolution": [
+						2464,
+						2064
+					]
+				},
+				"Right": {
+					"Projection": [
+						[
+							1639.44775390625,
+							0,
+							0
+						],
+						[
+							0,
+							1639.44775390625,
+							0
+						],
+						[
+							1573.1480712890625,
+							1035.6810302734375,
+							1
+						]
+					],
+					"Resolution": [
+						2464,
+						2064
+					]
+				}
+			}
+		},
+		"Stereo": {
+			"Angle": {
+			},
+			"Left": {
+			},
+			"Reprojection": [
+				[
+					1,
+					0,
+					0,
+					0
+				],
+				[
+					0,
+					1,
+					0,
+					0
+				],
+				[
+					0,
+					0,
+					0,
+					0.004102601793146863
+				],
+				[
+					-912.58123779296875,
+					-1035.6810302734375,
+					1639.44775390625,
+					2.710042675594420025
+				]
+			],
+			"Right": {
+			}
+		}
+	},
+	"CompleteModelName": "CR67-5M8C-4/28|5/28|2.45/24|975-240/7",
+	"Components": {
+		"Device": {
+			"DataSource": "Hardware",
+			"FirmwareUpdate": {
+				"Download": true,
+				"Extension": "guf",
+				"Included": false
+			},
+			"ModelName": "CR67-4-S",
+			"NetworkConnection": {
+				"Device": {
+					"Bandwidth": 1000,
+					"IpConfiguration": {
+						"Address": "192.168.255.254",
+						"Gateway": null,
+						"Method": "Static",
+						"PrefixLength": 16
+					},
+					"MAC": "78:52:4a:00:2c:52",
+					"Method": {
+						"Available": {
+							"Automatic": false,
+							"DHCP": true
+						}
+					}
+				},
+				"Host": {
+					"Bandwidth": 1000,
+					"IpConfiguration": {
+						"Address": "192.168.1.102",
+						"Gateway": null,
+						"Method": "Static",
+						"PrefixLength": 16
+					},
+					"MAC": "ac:b4:80:20:a5:1e",
+					"MaximumTransmissionUnit": 9000,
+					"Name": "enp46s0"
+				}
+			},
+			"SerialNumber": "269561",
+			"Status": {
+				"ActionRequired": "None",
+				"Available": false,
+				"Messages": [
+				]
+			},
+			"Temperature": {
+			},
+			"Type": "Assembly",
+			"Version": {
+				"Application": {
+					"Available": null,
+					"Device": "2.1.667",
+					"Required": "2.1.667"
+				}
+			}
+		}
+	},
+	"EepromFormat": {
+		"Calibration": {
+			"Current": 12,
+			"Latest": 12
+		}
+	},
+	"EepromId": 0,
+	"FirmwareVersion": {
+		"Application": "2.1.667"
+	},
+	"Group": "[269561]",
+	"HardwareRevision": null,
+	"Images": {
+		"ConfidenceMap": null,
+		"DisparityMap": null,
+		"Normals": null,
+		"PointMap": null,
+		"Raw": [
+			{
+				"Left": {
+					"Binning": 1,
+					"BinningShift": [
+						0,
+						0
+					],
+					"Calibration": {
+						"Distortion": {
+							"K1": -0.126416102051734924,
+							"K2": 0.109358206391334534,
+							"K3": -0.000333731150021777,
+							"Rx": -0.001146084163337946,
+							"Ry": 0.003023001831024885,
+							"T1": 0.000484135816805065,
+							"T2": 0.000425667501986027
+						},
+						"Projection": [
+							[
+								1404.8204345703125,
+								0,
+								0
+							],
+							[
+								0,
+								1404.5731201171875,
+								0
+							],
+							[
+								1281.9327392578125,
+								1065.76953125,
+								1
+							]
+						]
+					},
+					"Channels": 1,
+					"Data": 13439408118.874696731567382812,
+					"DeviceTimestamp": 2793947.152000000234693289,
+					"Height": 2064,
+					"Offset": [
+						0,
+						0
+					],
+					"ResolvedLink": {
+						"Rotation": {
+							"Angle": 0.121096314344164249,
+							"Axis": [
+								-0.031349525765830742,
+								-0.999500704820700747,
+								-0.003943132914312354
+							]
+						},
+						"Translation": [
+							0,
+							0,
+							0
+						]
+					},
+					"Timestamp": "2026-11-17T16:55:18.875Z",
+					"Width": 2464
+				},
+				"Right": {
+					"Binning": 1,
+					"BinningShift": [
+						0,
+						0
+					],
+					"Calibration": {
+						"Distortion": {
+							"K1": -0.122965171933174133,
+							"K2": 0.108712196350097656,
+							"K3": 0.00003203436426702,
+							"Rx": 0.005027296952903271,
+							"Ry": 0.001356624648906291,
+							"T1": -0.000404193502618,
+							"T2": -0.00001677225009189
+						},
+						"Projection": [
+							[
+								1420.4884033203125,
+								0,
+								0
+							],
+							[
+								0,
+								1420.3426513671875,
+								0
+							],
+							[
+								1207.5023193359375,
+								998.072998046875,
+								1
+							]
+						]
+					},
+					"Channels": 1,
+					"Data": 13439408118.805253982543945312,
+					"DeviceTimestamp": 2793944.48499999986961484,
+					"Height": 2064,
+					"Offset": [
+						0,
+						0
+					],
+					"ResolvedLink": {
+						"Rotation": {
+							"Angle": 0.121800375132020647,
+							"Axis": [
+								0.027899350606121788,
+								0.998368913901547361,
+								0.049811022784133206
+							]
+						},
+						"Translation": [
+							-241.943360993343105747,
+							-1.525462842363433102,
+							29.564402005932787887
+						]
+					},
+					"Timestamp": "2026-11-17T16:55:18.805Z",
+					"Width": 2464
+				}
+			}
+		],
+		"RawTexture": {
+			"Left": null,
+			"Right": null
+		},
+		"Rectified": [
+			{
+				"Left": null,
+				"Right": null
+			}
+		],
+		"RectifiedTexture": {
+			"Left": null,
+			"Right": null
+		},
+		"WithOverlay": {
+			"Left": {
+				"Channels": 3,
+				"Data": 13439408118.874696731567382812,
+				"Height": 2064,
+				"Timestamp": "2026-11-17T16:55:18.875Z",
+				"Width": 2464
+			},
+			"Right": {
+				"Channels": 3,
+				"Data": 13439408118.805253982543945312,
+				"Height": 2064,
+				"Timestamp": "2026-11-17T16:55:18.805Z",
+				"Width": 2464
+			}
+		}
+	},
+	"Link": {
+		"Rotation": {
+			"Angle": 0,
+			"Axis": [
+				1,
+				0,
+				0
+			]
+		},
+		"Target": "",
+		"Translation": [
+			0,
+			0,
+			0
+		]
+	},
+	"ModelName": "CR67-4-S",
+	"Parameters": {
+		"Capture": {
+			"AutoBrightness": {
+				"AreaOfInterest": {
+					"LeftTop": [
+						361,
+						302
+					],
+					"RightBottom": [
+						2102,
+						1760
+					]
+				},
+				"Method": "Mean",
+				"Target": {
+					"Highlight": {
+						"Brightness": 240,
+						"Quantile": 0.989999999999999991
+					},
+					"Mean": 128,
+					"Shadow": {
+						"Brightness": 15,
+						"Quantile": 0.01
+					}
+				}
+			},
+			"Binning": 1,
+			"DownloadImages": true,
+			"Exposure": {
+				"Automatic": {
+					"Enabled": false,
+					"Max": 10
+				},
+				"Value": 8.161393554687499829
+			},
+			"FlexView": false,
+			"FlexViewInterval": 0,
+			"ForceGrayscale": false,
+			"FrontLight": {
+				"Brightness": 1,
+				"Enabled": true
+			},
+			"Gain": {
+				"Automatic": {
+					"Enabled": false,
+					"Max": 15.848932266235351562
+				},
+				"Value": 6.025595664978027344
+			},
+			"HardwareGamma": true,
+			"Hdr": {
+				"Automatic": false,
+				"Enabled": false,
+				"Split": 0
+			},
+			"ImageBuffer": {
+				"Count": 1,
+				"OverflowPolicy": "DiscardOld",
+				"Size": 1
+			},
+			"ImageDownloadLimit": -1,
+			"MaxAutoExposureAndGainAdjustment": 0,
+			"MaxFlashTime": 120,
+			"MaxGain": 15.848932266235351562,
+			"Mode": "Raw",
+			"MultiExposureFactor": 1,
+			"Projector": {
+				"Brightness": 1,
+				"Enabled": false
+			},
+			"ProjectorMinimumDutyCycle": 0.100000001490116119,
+			"Recalibrate": {
+				"Enabled": false,
+				"Epipolar": true,
+				"Temperature": true
+			},
+			"TriggerDelay": 1,
+			"TriggerMode": "Software",
+			"Triggered": true,
+			"WaitForRecalibration": true
+		},
+		"DisparityMap": {
+			"AreaOfInterest": {
+				"FullWidth": true,
+				"LeftTop": [
+					0,
+					0
+				],
+				"Raw": {
+					"Left": {
+						"ImageOffset": [
+							0,
+							0
+						],
+						"LeftTop": [
+							0,
+							0
+						],
+						"RightBottom": [
+							2463,
+							2063
+						]
+					},
+					"Right": {
+						"ImageOffset": [
+							0,
+							0
+						],
+						"LeftTop": [
+							0,
+							0
+						],
+						"RightBottom": [
+							2463,
+							2063
+						]
+					}
+				},
+				"RightBottom": [
+					2463,
+					2063
+				]
+			},
+			"ClipToAreaOfInterest": false,
+			"ClipToWorkingRange": true,
+			"Downsample": [
+				1,
+				1
+			],
+			"MeasurementVolume": {
+				"Far": {
+					"DisparityStep": 1.120965692740097719,
+					"LeftBottom": [
+						-372.553993392914037486,
+						419.394755019884428293,
+						669.291436622085143426
+					],
+					"LeftTop": [
+						-372.553993392914037486,
+						-422.808499375691951627,
+						669.291436622085143426
+					],
+					"PixelSize": 0.408242004069595932,
+					"RightBottom": [
+						607.022695372081329879,
+						419.394755019884428293,
+						669.291436622085143426
+					],
+					"RightTop": [
+						607.022695372081329879,
+						-422.808499375691951627,
+						669.291436622085143426
+					]
+				},
+				"Near": {
+					"DisparityStep": 0.764330751628275684,
+					"LeftBottom": [
+						-286.564655576448046759,
+						346.311968361006506711,
+						552.662216323546545027
+					],
+					"LeftTop": [
+						-286.564655576448046759,
+						-349.130841303957197397,
+						552.662216323546545027
+					],
+					"PixelSize": 0.33710267070526595,
+					"RightBottom": [
+						522.650305451542976698,
+						346.311968361006506711,
+						552.662216323546545027
+					],
+					"RightTop": [
+						522.650305451542976698,
+						-349.130841303957197397,
+						552.662216323546545027
+					]
+				}
+			},
+			"PostProcessing": {
+				"CorrespondenceThreshold": 60,
+				"Filling": {
+					"BorderSpread": 3,
+					"RegionSize": 0
+				},
+				"MedianFilterRadius": 1,
+				"RegionFilterDownsampling": 1,
+				"SpeckleRemoval": {
+					"ComponentThreshold": 3,
+					"RegionSize": 500
+				},
+				"UniquenessOffset": 16,
+				"UniquenessRatio": 10
+			},
+			"ScaledAreaOfInterest": {
+				"Left": {
+					"LeftTop": [
+						0,
+						0
+					],
+					"RightBottom": [
+						2463,
+						2063
+					]
+				},
+				"Right": {
+					"LeftTop": [
+						0,
+						0
+					],
+					"RightBottom": [
+						2463,
+						2063
+					]
+				}
+			},
+			"ScaledMeasurementVolume": {
+				"Far": {
+					"DisparityStep": 1.120965692740097719,
+					"LeftBottom": [
+						-372.553993392914037486,
+						419.394755019884428293,
+						669.291436622085143426
+					],
+					"LeftTop": [
+						-372.553993392914037486,
+						-422.808499375691951627,
+						669.291436622085143426
+					],
+					"PixelSize": 0.408242004069595932,
+					"RightBottom": [
+						607.022695372081329879,
+						419.394755019884428293,
+						669.291436622085143426
+					],
+					"RightTop": [
+						607.022695372081329879,
+						-422.808499375691951627,
+						669.291436622085143426
+					]
+				},
+				"Near": {
+					"DisparityStep": 0.764330751628275684,
+					"LeftBottom": [
+						-286.564655576448046759,
+						346.311968361006506711,
+						552.662216323546545027
+					],
+					"LeftTop": [
+						-286.564655576448046759,
+						-349.130841303957197397,
+						552.662216323546545027
+					],
+					"PixelSize": 0.33710267070526595,
+					"RightBottom": [
+						522.650305451542976698,
+						346.311968361006506711,
+						552.662216323546545027
+					],
+					"RightTop": [
+						522.650305451542976698,
+						-349.130841303957197397,
+						552.662216323546545027
+					]
+				}
+			},
+			"Scaling": 1,
+			"StereoMatching": {
+				"EnforceDisparityRange": false,
+				"Method": "PatchMatch2",
+				"MinimumDisparity": -64,
+				"NumberOfDisparities": 128,
+				"Padding": true,
+				"PatchMatch": {
+					"Alpha": {
+						"Automatic": true,
+						"Value": 0.017851578071713448
+					},
+					"Beta": {
+						"Automatic": true,
+						"Value": 0.163262352347373962
+					},
+					"ConfidenceMap": false,
+					"CoupledPropagation": true,
+					"Invalidation": true,
+					"Iterations": 2,
+					"LiveMode": true,
+					"PostInterpolation": false,
+					"PropagationLimit": -1,
+					"PropagationScheme": "TB",
+					"Smoothness": {
+						"Automatic": true,
+						"Value": 0.864310741424560547
+					},
+					"TiltedPatches": true,
+					"ValidateAgainstRightView": false,
+					"WindowRadius": {
+						"Automatic": true,
+						"Value": 5.811526775360107422
+					}
+				},
+				"PatchMatch2": {
+					"ConfidenceMap": false,
+					"Iterations": 2,
+					"LargeCorrelationWindow": false,
+					"LiveMode": true
+				},
+				"ScaledMinimumDisparity": -64,
+				"ScaledNumberOfDisparities": 128,
+				"SemiGlobalMatching": {
+					"CostScale": -3,
+					"DepthChangeCost": 5,
+					"DepthStepCost": 30,
+					"PropagationDecay": 3
+				},
+				"ShadowingThreshold": 2,
+				"WindowRadius": 0
+			},
+			"ValidRegion": {
+				"LeftTop": [
+					0,
+					0
+				],
+				"RightBottom": [
+					2463,
+					2063
+				]
+			}
+		},
+		"IO": {
+			"Output": {
+				"Driver": {
+					"Sink": true,
+					"Source": true
+				}
+			}
+		},
+		"Overlay": {
+			"Text": {
+				"Angle": 0,
+				"Color": [
+					255,
+					0,
+					0
+				],
+				"Mirror": {
+					"Horizontal": true,
+					"Vertical": false
+				}
+			}
+		},
+		"PointMap": {
+			"BoundingBox": {
+				"Enabled": false,
+				"Link": {
+					"Inverse": false,
+					"Rotation": {
+						"Angle": 0,
+						"Axis": [
+							1,
+							0,
+							0
+						]
+					},
+					"Target": "269561",
+					"Translation": [
+						0,
+						0,
+						0
+					]
+				},
+				"Size": [
+					0,
+					0,
+					0
+				]
+			}
+		},
+		"SurfaceConnectivity": 3,
+		"TransportLayer": {
+			"BandwidthLimit": 950,
+			"Ptp": {
+				"ClockId": "78524a.fffe.002c52",
+				"Enabled": false,
+				"GrandmasterClockId": "000000.0000.000000",
+				"MeanPropagationDelay": 0,
+				"OffsetFromMaster": 0,
+				"ParentClockId": "000000.0000.000000",
+				"Status": "Disabled"
+			}
+		}
+	},
+	"Port": {
+		"DHCP": false,
+		"Gateway": null,
+		"IpAddress": "192.168.255.254",
+		"IpSubnetMask": "255.255.0.0",
+		"MAC": "78:52:4a:00:2c:52",
+		"NetworkAdapter": {
+			"Gateway": null,
+			"IpAddress": "192.168.1.102",
+			"IpSubnetMask": "255.255.0.0",
+			"MAC": "ac:b4:80:20:a5:1e",
+			"MaximumTransmissionUnit": 9000,
+			"Name": "enp46s0"
+		},
+		"Type": "Ethernet"
+	},
+	"PreviewImage": null,
+	"ResolvedLink": {
+		"Rotation": {
+			"Angle": 0,
+			"Axis": [
+				1,
+				0,
+				0
+			]
+		},
+		"Translation": [
+			0,
+			0,
+			0
+		]
+	},
+	"Sensor": {
+		"Left": {
+			"FirmwareUpdateVersion": null,
+			"FirmwareVersion": "2.1.667",
+			"GlobalShutter": true,
+			"MaximumTransmissionUnit": 9000,
+			"ModelName": "CR67-4-S",
+			"Port": {
+				"Bandwidth": 1000,
+				"DHCP": false,
+				"Gateway": null,
+				"IpAddress": "192.168.255.254",
+				"IpSubnetMask": "255.255.0.0",
+				"MAC": "78:52:4a:00:2c:52",
+				"MaximumTransmissionUnit": 9000,
+				"NetworkAdapter": {
+					"Gateway": null,
+					"IpAddress": "192.168.1.102",
+					"IpSubnetMask": "255.255.0.0",
+					"MAC": "ac:b4:80:20:a5:1e",
+					"MaximumTransmissionUnit": 9000,
+					"Name": "enp46s0"
+				},
+				"Type": "Ethernet"
+			},
+			"SerialNumber": "269561-Left",
+			"Temperature": 35.3125
+		},
+		"Right": {
+			"FirmwareUpdateVersion": null,
+			"FirmwareVersion": "2.1.667",
+			"GlobalShutter": true,
+			"MaximumTransmissionUnit": 9000,
+			"ModelName": "CR67-4-S",
+			"Port": {
+				"Bandwidth": 1000,
+				"DHCP": false,
+				"Gateway": null,
+				"IpAddress": "192.168.255.254",
+				"IpSubnetMask": "255.255.0.0",
+				"MAC": "78:52:4a:00:2c:52",
+				"MaximumTransmissionUnit": 9000,
+				"NetworkAdapter": {
+					"Gateway": null,
+					"IpAddress": "192.168.1.102",
+					"IpSubnetMask": "255.255.0.0",
+					"MAC": "ac:b4:80:20:a5:1e",
+					"MaximumTransmissionUnit": 9000,
+					"Name": "enp46s0"
+				},
+				"Type": "Ethernet"
+			},
+			"SerialNumber": "269561-Right",
+			"Temperature": 36.125
+		},
+		"Size": [
+			2464,
+			2064
+		]
+	},
+	"SerialNumber": "269561",
+	"Status": {
+		"ActionRequired": "None",
+		"Available": false,
+		"Calibrated": true,
+		"DynamicCalibrationLimitReached": false,
+		"FirmwareSupportsModel": true,
+		"IsApprovedFirmwareVersion": true,
+		"IsSuppliedFirmwareVersion": true,
+		"LocalEepromFile": false,
+		"LowBandwidth": false,
+		"Messages": [
+		],
+		"MinimumVoltage": 22.984163284301757812,
+		"Open": true,
+		"Overtemperature": false,
+		"Paired": true,
+		"PowerOverEthernet": false,
+		"ValidCameraFirmware": true,
+		"ValidFirmware": true,
+		"ValidIpAddress": true,
+		"ValidProjectorFirmware": true
+	},
+	"Temperature": {
+		"Board": 37.417877197265625,
+		"CPU": 45.370105743408203125,
+		"Calibration": 35.71875,
+		"Camera": 36.125,
+		"Housing": 35.71875
+	},
+	"Type": "Stereo",
+	"_NxLibVersion": {
+		"CodeMeter": {
+			"HasLicense": false,
+			"Status": "CodeMeter API could not be loaded."
+		},
+		"FirmwareVersion": {
+			"B5x": {
+				"Build": 667,
+				"Major": 2,
+				"Minor": 1
+			},
+			"C5x": {
+				"Build": 667,
+				"Major": 2,
+				"Minor": 1
+			},
+			"CR6x": {
+				"Build": 667,
+				"Major": 2,
+				"Minor": 1
+			}
+		},
+		"NxLib": {
+			"Build": 1823,
+			"Day": 13,
+			"Hash": "f9d58001108f43c8156016aa0d12d4fbc3d9b111",
+			"Major": 4,
+			"Minor": 4,
+			"Month": 11,
+			"Year": 26
+		},
+		"PartFinder": {
+			"HasLicense": false
+		},
+		"Projector": {
+			"FirmwareVersion": {
+				"Application": 37,
+				"Bootloader": 18
+			}
+		},
+		"RayTracing": {
+			"HasLicense": false
+		},
+		"SystemInfo": {
+			"Architecture": "x64",
+			"CPU": {
+				"Cores": 16,
+				"Feature": {
+					"Avx2": true,
+					"PopCnt": true
+				},
+				"Threads": 22
+			},
+			"CUDA": {
+				"Devices": [
+					{
+						"ClockRate": 1980,
+						"ComputeCapability": "8.9",
+						"Cores": 4608,
+						"Integrated": false,
+						"Memory": 7940,
+						"Name": "NVIDIA GeForce RTX 4070 Laptop GPU"
+					}
+				],
+				"ErrorText": "",
+				"Version": 12020
+			},
+			"Memory": 31601,
+			"OperatingSystem": "Linux"
+		},
+		"UEye": {
+			"Status": "No UEye driver loaded."
+		}
+	},
+	"_Protection": "None",
+	"_Timestamp": "2026-11-17T16:55:19.620Z"
+}
